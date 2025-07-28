@@ -6,6 +6,7 @@ import { useUser } from '@clerk/nextjs';
 import Image from 'next/image';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { getMeetingLink } from '@/lib/utils';
 
 const LoadingSpinner = () => (
   <div className="flex items-center gap-2 text-gray-400">
@@ -147,7 +148,7 @@ const UpcomingMeetings = () => {
                   </Link>
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/meeting/${meeting.id}`);
+                      navigator.clipboard.writeText(getMeetingLink(meeting.id));
                       // You might want to add a toast notification here
                     }}
                     className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700/70 text-gray-300 rounded-lg transition-colors"

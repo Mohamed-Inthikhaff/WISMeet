@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useGetCallById } from "@/hooks/useGetCallById";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
+import { getMeetingLink } from "@/lib/utils";
 
 const Table = ({
   title,
@@ -53,7 +54,7 @@ const PersonalRoom = () => {
     router.push(`/meeting/${meetingId}?personal=true`);
   };
 
-  const meetingLink = `${process.env.NEXT_PUBLIC_BASE_URL}/meeting/${meetingId}?personal=true`;
+  const meetingLink = getMeetingLink(meetingId!, true);
 
   return (
     <section className="flex size-full flex-col gap-10 text-white">

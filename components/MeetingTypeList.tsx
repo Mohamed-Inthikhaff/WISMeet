@@ -13,6 +13,7 @@ import ReactDatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { useToast } from './ui/use-toast';
 import { Input } from './ui/input';
+import { getMeetingLink } from '@/lib/utils';
 
 const initialValues = {
   dateTime: new Date(),
@@ -126,7 +127,7 @@ const MeetingTypeList = () => {
 
   if (!client || !user) return <Loader />;
 
-  const meetingLink = callDetail ? `${process.env.NEXT_PUBLIC_BASE_URL}/meeting/${callDetail.id}` : '';
+  const meetingLink = callDetail ? getMeetingLink(callDetail.id) : '';
 
   return (
     <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">

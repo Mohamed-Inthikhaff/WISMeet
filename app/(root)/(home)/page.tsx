@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useUser } from '@clerk/nextjs';
+import { getMeetingLink } from '@/lib/utils';
 
 const LoadingSpinner = () => (
   <div className="flex items-center gap-2 text-gray-400">
@@ -370,7 +371,7 @@ const Home = () => {
                       </Link>
                       <button 
                         onClick={() => {
-                          navigator.clipboard.writeText(`${window.location.origin}/meeting/${meeting.id}`);
+                          navigator.clipboard.writeText(getMeetingLink(meeting.id));
                           // You might want to add a toast notification here
                         }}
                         className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors"
