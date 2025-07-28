@@ -22,6 +22,8 @@ import {
 } from './ui/dropdown-menu';
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
+import ParticipantSync from './ParticipantSync';
+import ParticipantVisibilityTest from './ParticipantVisibilityTest';
 import { cn } from '@/lib/utils';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
@@ -35,6 +37,9 @@ const MeetingRoom = () => {
   const { useCallCallingState } = useCallStateHooks();
   const callingState = useCallCallingState();
   const call = useCall();
+
+  // Get participants from call state
+  const participants = call?.state.participants || [];
 
   // Initialize devices based on setup preferences
   useEffect(() => {
@@ -51,6 +56,37 @@ const MeetingRoom = () => {
     }
   }, [call]);
 
+  // Monitor participant state changes
+  useEffect(() => {
+    if (!call) return;
+
+    const handleParticipantJoined = (event: any) => {
+      console.log('Participant joined:', event);
+    };
+
+    const handleParticipantLeft = (event: any) => {
+      console.log('Participant left:', event);
+    };
+
+    const handleCallUpdated = (event: any) => {
+      console.log('Call updated:', event);
+    };
+
+    // Subscribe to participant events using the correct event types
+    call.on('call.updated', handleCallUpdated);
+
+    // Cleanup event listeners
+    return () => {
+      call.off('call.updated', handleCallUpdated);
+    };
+  }, [call]);
+
+  // Log participant state for debugging
+  useEffect(() => {
+    console.log('Current participants:', participants);
+    console.log('Call state:', call?.state);
+  }, [participants, call?.state]);
+
   if (callingState !== CallingState.JOINED) {
     return (
       <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
@@ -66,35 +102,11 @@ const MeetingRoom = () => {
   }
 
   const CallLayout = () => {
-    const layoutProps = {
-      participantsBarPosition: layout === 'speaker-right' ? 'left' : 'right',
-      aspectRatio: 16 / 9,
-      participantViewOptions: {
-        fit: 'contain',
-        cornerRadius: '16px',
-        showParticipantName: true,
-        nameDisplayMode: 'always',
-        namePlateStyle: {
-          textSize: 16,
-          textColor: '#ffffff',
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
-          spacing: 8,
-          padding: 8,
-          cornerRadius: 8,
-        },
-      },
-    };
-
     switch (layout) {
       case 'grid':
         return (
           <div className="h-full w-full">
-            <PaginatedGridLayout
-              participantViewOptions={{
-                ...layoutProps.participantViewOptions,
-                aspectRatio: layoutProps.aspectRatio,
-              }}
-            />
+            <PaginatedGridLayout />
           </div>
         );
       case 'speaker-right':
@@ -102,11 +114,7 @@ const MeetingRoom = () => {
         return (
           <div className="h-full w-full">
             <SpeakerLayout
-              participantsBarPosition={layoutProps.participantsBarPosition}
-              participantViewOptions={{
-                ...layoutProps.participantViewOptions,
-                aspectRatio: layoutProps.aspectRatio,
-              }}
+              participantsBarPosition={layout === 'speaker-right' ? 'left' : 'right'}
             />
           </div>
         );
@@ -117,6 +125,10 @@ const MeetingRoom = () => {
 
   return (
     <div className="relative flex h-screen flex-col bg-gradient-to-br from-gray-900 to-gray-800">
+      {/* Debug Components */}
+      <ParticipantSync />
+      <ParticipantVisibilityTest />
+      
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-1/2 right-0 h-[500px] w-[500px] rounded-full bg-blue-500/10 blur-[120px]" />
@@ -149,7 +161,7 @@ const MeetingRoom = () => {
             >
               <div className="flex h-full flex-col">
                 <div className="flex items-center justify-between border-b border-gray-800 p-4">
-                  <h2 className="text-lg font-semibold text-white">Participants</h2>
+                  <h2 className="text-lg font-semibold text-white">Participants ({participants.length})</h2>
                   <button
                     onClick={() => setShowParticipants(false)}
                     className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"
@@ -159,10 +171,6 @@ const MeetingRoom = () => {
                 </div>
                 <CallParticipantsList 
                   onClose={() => setShowParticipants(false)}
-                  participantViewOptions={{
-                    nameDisplayMode: 'always',
-                    showParticipantName: true,
-                  }}
                 />
               </div>
             </motion.div>
@@ -194,7 +202,6 @@ const MeetingRoom = () => {
       >
         <CallControls 
           onLeave={() => router.push('/')}
-          className="bg-transparent"
         />
 
         <DropdownMenu>
@@ -227,7 +234,7 @@ const MeetingRoom = () => {
           )}
         >
           <Users className="h-5 w-5" />
-          <span className="hidden text-sm md:inline">Participants</span>
+          <span className="hidden text-sm md:inline">Participants ({participants.length})</span>
         </button>
 
         {!isPersonalRoom && <EndCallButton />}

@@ -61,7 +61,7 @@ const MeetingSetup = ({
     };
 
     initializeDevices();
-  }, []); // Run only once on mount
+  }, [call.camera, call.microphone, isCameraEnabled, isMicEnabled]); // Added missing dependencies
 
   // Handle camera toggle
   const toggleCamera = async () => {
@@ -129,7 +129,7 @@ const MeetingSetup = ({
         console.error('Error cleaning up devices:', err);
       }
     };
-  }, []);
+  }, [call.camera, call.microphone]); // Added missing dependencies
 
   if (error) {
     return <Alert title={error} />;
@@ -156,10 +156,10 @@ const MeetingSetup = ({
         // Set the participant name and device states in the call metadata
         await call.join({
           data: { 
-            name: participantName,
             custom: {
               initialCameraEnabled: isCameraEnabled,
-              initialMicEnabled: isMicEnabled
+              initialMicEnabled: isMicEnabled,
+              participantName: participantName // Add participant name to metadata
             }
           }
         });
@@ -171,6 +171,13 @@ const MeetingSetup = ({
         if (!isMicEnabled) {
           await call.microphone.disable();
         }
+
+        // Verify participant state after joining
+        setTimeout(() => {
+          console.log('Call state after join:', call.state);
+          console.log('Participants after join:', call.state.participants);
+          console.log('Current user in call:', call.state.participants.find(p => p.userId === call.state.createdBy?.id));
+        }, 1000);
 
         setIsSetupComplete(true);
       }

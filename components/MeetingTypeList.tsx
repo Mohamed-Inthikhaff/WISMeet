@@ -63,11 +63,13 @@ const MeetingTypeList = () => {
       await call.getOrCreate({
         data: {
           starts_at: startsAt,
-          created_by_user_id: user.id,
+          created_by_id: user.id,
           members: [member], // Pass member object instead of just the ID
           custom: {
             description,
             host: user.fullName || user.username,
+            allowGuestAccess: true, // Allow guests to join
+            guestPermissions: ['publish-audio', 'publish-video', 'create-data'] // Grant basic permissions to guests
           },
         },
       });

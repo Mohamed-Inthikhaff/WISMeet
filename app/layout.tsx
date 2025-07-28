@@ -8,6 +8,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -44,6 +45,8 @@ export default function RootLayout({
             socialButtonsVariant: "blockButton",
           },
         }}
+        afterSignInUrl="/"
+        afterSignOutUrl="/"
       >
         <body className={`${inter.className} bg-dark-2`}>
           <Toaster />

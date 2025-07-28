@@ -68,17 +68,9 @@ export const useGetCalls = () => {
             calls.map(async (call) => {
               const callObj = client.call('default', call.id);
               await callObj.get();
-              // Set the start time in the call state
-              if (call.starts_at) {
-                callObj.state.startsAt = new Date(call.starts_at);
-              }
-              // Set the description in custom data if available
-              if (call.custom?.description) {
-                callObj.state.custom = {
-                  ...callObj.state.custom,
-                  description: call.custom.description
-                };
-              }
+              // Instead of mutating state, attach extra info as properties
+              (callObj as any)._startsAt = call.starts_at ? new Date(call.starts_at) : undefined;
+              (callObj as any)._description = call.custom?.description;
               return callObj;
             })
           );

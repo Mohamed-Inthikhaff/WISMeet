@@ -63,7 +63,7 @@ const UpcomingMeetings = () => {
             </div>
             <h3 className="text-xl font-semibold text-white mb-2">No Upcoming Meetings</h3>
             <p className="text-gray-400 text-center mb-6">
-              You don't have any meetings scheduled. Would you like to schedule one now?
+              You don&apos;t have any meetings scheduled. Would you like to schedule one now?
             </p>
             <Link
               href="/"

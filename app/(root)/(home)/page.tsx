@@ -270,7 +270,7 @@ const Home = () => {
                   </div>
                   <h3 className="text-xl font-semibold text-white mb-2">No Upcoming Meetings</h3>
                   <p className="text-gray-400 text-center mb-6">
-                    You don't have any meetings scheduled. Would you like to schedule one now?
+                    You don&apos;t have any meetings scheduled. Would you like to schedule one now?
                   </p>
                   <Link
                     href="/"
@@ -301,7 +301,9 @@ const Home = () => {
                               />
                             </svg>
                             <span>
-                              {meeting.state.startsAt ? (
+                              {(meeting as any)._startsAt ? (
+                                format((meeting as any)._startsAt, 'EEEE, MMMM d, yyyy')
+                              ) : meeting.state.startsAt ? (
                                 format(new Date(meeting.state.startsAt), 'EEEE, MMMM d, yyyy')
                               ) : (
                                 'Date not set'
@@ -315,7 +317,9 @@ const Home = () => {
                               />
                             </svg>
                             <span>
-                              {meeting.state.startsAt ? (
+                              {(meeting as any)._startsAt ? (
+                                format((meeting as any)._startsAt, 'h:mm a')
+                              ) : meeting.state.startsAt ? (
                                 format(new Date(meeting.state.startsAt), 'h:mm a')
                               ) : (
                                 'Time not set'
@@ -426,7 +430,7 @@ const Home = () => {
                     <div className="flex items-start justify-between">
                       <div className="space-y-1">
                         <h5 className="font-medium text-white">
-                          {recording.state.custom?.description || 'Recorded Meeting'}
+                          {(recording as any)._description || recording.state.custom?.description || 'Recorded Meeting'}
                         </h5>
                         <p className="text-sm text-gray-400">
                           {recording.state.endedAt && formatDistanceToNow(new Date(recording.state.endedAt), { addSuffix: true })}
@@ -440,9 +444,13 @@ const Home = () => {
                     </div>
 
                     <div className="mt-4 flex items-center gap-3">
-                      {recording.state.recording?.url && (
+                      {recording.state.recording && 
+                       typeof recording.state.recording === 'object' && 
+                       recording.state.recording !== null &&
+                       'url' in recording.state.recording && 
+                       typeof (recording.state.recording as any).url === 'string' && (
                         <a 
-                          href={recording.state.recording.url}
+                          href={(recording.state.recording as any).url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
