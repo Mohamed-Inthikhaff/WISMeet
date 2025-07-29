@@ -238,35 +238,117 @@ const MeetingSetup = ({
 
                   {/* Quick Controls */}
                   <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-gray-900/90 p-3 backdrop-blur-sm">
-                    <button
+                    {/* Enhanced Microphone Toggle */}
+                    <motion.button
                       onClick={toggleMicrophone}
-                      className={`flex items-center gap-2 rounded-lg p-3 transition-colors ${
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
                         isMicEnabled
-                          ? 'bg-gray-700/50 text-white hover:bg-gray-700'
-                          : 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                          ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/20'
+                          : 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20'
                       }`}
                       title={isMicEnabled ? 'Turn off microphone' : 'Turn on microphone'}
                     >
-                      {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-                    </button>
-                    <button
+                      {/* Background glow effect */}
+                      <div className={`absolute inset-0 rounded-xl ${
+                        isMicEnabled ? 'bg-green-500/10' : 'bg-red-500/10'
+                      }`} />
+                      
+                      {/* Icon with animation */}
+                      <motion.div
+                        initial={false}
+                        animate={{ 
+                          scale: isMicEnabled ? 1 : 0.8,
+                          opacity: isMicEnabled ? 1 : 0.7
+                        }}
+                        transition={{ duration: 0.2 }}
+                        className="relative z-10"
+                      >
+                        {isMicEnabled ? (
+                          <Mic className="h-6 w-6" />
+                        ) : (
+                          <MicOff className="h-6 w-6" />
+                        )}
+                      </motion.div>
+                      
+                      {/* Status indicator */}
+                      <motion.div
+                        initial={false}
+                        animate={{ 
+                          scale: isMicEnabled ? 1 : 0,
+                          opacity: isMicEnabled ? 1 : 0
+                        }}
+                        transition={{ duration: 0.2 }}
+                        className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
+                          isMicEnabled ? 'bg-green-500' : 'bg-red-500'
+                        }`}
+                      />
+                    </motion.button>
+
+                    {/* Enhanced Camera Toggle */}
+                    <motion.button
                       onClick={toggleCamera}
-                      className={`flex items-center gap-2 rounded-lg p-3 transition-colors ${
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
                         isCameraEnabled
-                          ? 'bg-gray-700/50 text-white hover:bg-gray-700'
-                          : 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                          ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/20'
+                          : 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20'
                       }`}
                       title={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
                     >
-                      {isCameraEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                    </button>
-                    <button
+                      {/* Background glow effect */}
+                      <div className={`absolute inset-0 rounded-xl ${
+                        isCameraEnabled ? 'bg-green-500/10' : 'bg-red-500/10'
+                      }`} />
+                      
+                      {/* Icon with animation */}
+                      <motion.div
+                        initial={false}
+                        animate={{ 
+                          scale: isCameraEnabled ? 1 : 0.8,
+                          opacity: isCameraEnabled ? 1 : 0.7
+                        }}
+                        transition={{ duration: 0.2 }}
+                        className="relative z-10"
+                      >
+                        {isCameraEnabled ? (
+                          <Video className="h-6 w-6" />
+                        ) : (
+                          <VideoOff className="h-6 w-6" />
+                        )}
+                      </motion.div>
+                      
+                      {/* Status indicator */}
+                      <motion.div
+                        initial={false}
+                        animate={{ 
+                          scale: isCameraEnabled ? 1 : 0,
+                          opacity: isCameraEnabled ? 1 : 0
+                        }}
+                        transition={{ duration: 0.2 }}
+                        className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
+                          isCameraEnabled ? 'bg-green-500' : 'bg-red-500'
+                        }`}
+                      />
+                    </motion.button>
+
+                    {/* Settings Button */}
+                    <motion.button
                       onClick={() => setShowSettings(!showSettings)}
-                      className="flex items-center gap-2 rounded-lg bg-gray-700/50 p-3 text-white transition-colors hover:bg-gray-700"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gray-700/50 text-white transition-all duration-300 hover:bg-gray-600/50 shadow-lg"
                       title="Device settings"
                     >
-                      <Settings className="h-5 w-5" />
-                    </button>
+                      <motion.div
+                        animate={{ rotate: showSettings ? 180 : 0 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <Settings className="h-6 w-6" />
+                      </motion.div>
+                    </motion.button>
                   </div>
                 </motion.div>
 
@@ -325,33 +407,89 @@ const MeetingSetup = ({
                     </div>
 
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between rounded-lg bg-gray-900/50 px-4 py-3">
+                      <motion.div 
+                        className={`flex items-center justify-between rounded-lg px-4 py-3 transition-all duration-300 ${
+                          isCameraEnabled 
+                            ? 'bg-green-500/10 border border-green-500/20' 
+                            : 'bg-red-500/10 border border-red-500/20'
+                        }`}
+                        whileHover={{ scale: 1.02 }}
+                      >
                         <div className="flex items-center gap-3">
-                          <Video className="h-5 w-5 text-gray-400" />
+                          <motion.div
+                            animate={{ 
+                              scale: isCameraEnabled ? 1 : 0.8,
+                              opacity: isCameraEnabled ? 1 : 0.6
+                            }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <Video className={`h-5 w-5 ${isCameraEnabled ? 'text-green-400' : 'text-red-400'}`} />
+                          </motion.div>
                           <span className="text-sm text-gray-300">Camera</span>
                         </div>
-                        <span className={`text-sm ${isCameraEnabled ? 'text-green-400' : 'text-red-400'}`}>
-                          {isCameraEnabled ? 'Working' : 'Disabled'}
-                        </span>
-                      </div>
+                        <div className="flex items-center gap-2">
+                          <motion.div
+                            animate={{ 
+                              scale: isCameraEnabled ? 1 : 0,
+                              opacity: isCameraEnabled ? 1 : 0
+                            }}
+                            transition={{ duration: 0.2 }}
+                            className={`h-2 w-2 rounded-full ${isCameraEnabled ? 'bg-green-500' : 'bg-red-500'}`}
+                          />
+                          <span className={`text-sm font-medium ${isCameraEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                            {isCameraEnabled ? 'Working' : 'Disabled'}
+                          </span>
+                        </div>
+                      </motion.div>
 
-                      <div className="flex items-center justify-between rounded-lg bg-gray-900/50 px-4 py-3">
+                      <motion.div 
+                        className={`flex items-center justify-between rounded-lg px-4 py-3 transition-all duration-300 ${
+                          isMicEnabled 
+                            ? 'bg-green-500/10 border border-green-500/20' 
+                            : 'bg-red-500/10 border border-red-500/20'
+                        }`}
+                        whileHover={{ scale: 1.02 }}
+                      >
                         <div className="flex items-center gap-3">
-                          <Mic className="h-5 w-5 text-gray-400" />
+                          <motion.div
+                            animate={{ 
+                              scale: isMicEnabled ? 1 : 0.8,
+                              opacity: isMicEnabled ? 1 : 0.6
+                            }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <Mic className={`h-5 w-5 ${isMicEnabled ? 'text-green-400' : 'text-red-400'}`} />
+                          </motion.div>
                           <span className="text-sm text-gray-300">Microphone</span>
                         </div>
-                        <span className={`text-sm ${isMicEnabled ? 'text-green-400' : 'text-red-400'}`}>
-                          {isMicEnabled ? 'Working' : 'Disabled'}
-                        </span>
-                      </div>
+                        <div className="flex items-center gap-2">
+                          <motion.div
+                            animate={{ 
+                              scale: isMicEnabled ? 1 : 0,
+                              opacity: isMicEnabled ? 1 : 0
+                            }}
+                            transition={{ duration: 0.2 }}
+                            className={`h-2 w-2 rounded-full ${isMicEnabled ? 'bg-green-500' : 'bg-red-500'}`}
+                          />
+                          <span className={`text-sm font-medium ${isMicEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                            {isMicEnabled ? 'Working' : 'Disabled'}
+                          </span>
+                        </div>
+                      </motion.div>
 
-                      <div className="flex items-center justify-between rounded-lg bg-gray-900/50 px-4 py-3">
+                      <motion.div 
+                        className="flex items-center justify-between rounded-lg bg-green-500/10 border border-green-500/20 px-4 py-3 transition-all duration-300"
+                        whileHover={{ scale: 1.02 }}
+                      >
                         <div className="flex items-center gap-3">
-                          <Volume2 className="h-5 w-5 text-gray-400" />
+                          <Volume2 className="h-5 w-5 text-green-400" />
                           <span className="text-sm text-gray-300">Speaker</span>
                         </div>
-                        <span className="text-sm text-green-400">Working</span>
-                      </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-green-500" />
+                          <span className="text-sm font-medium text-green-400">Working</span>
+                        </div>
+                      </motion.div>
                     </div>
                   </div>
 

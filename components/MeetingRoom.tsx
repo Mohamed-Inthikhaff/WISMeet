@@ -11,30 +11,7 @@ import {
   useCall,
 } from '@stream-io/video-react-sdk';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { 
-  Users, 
-  LayoutList, 
-  X, 
-  ChevronLeft, 
-  Mic, 
-  MicOff, 
-  Video, 
-  VideoOff, 
-  Phone, 
-  PhoneOff,
-  Monitor,
-  MonitorOff,
-  MessageSquare,
-  Settings,
-  Share2,
-  MoreHorizontal,
-  Volume2,
-  VolumeX,
-  Info,
-  Smile,
-  Type,
-  Hand
-} from 'lucide-react';
+import { Users, LayoutList, X, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import {
@@ -45,6 +22,7 @@ import {
 } from './ui/dropdown-menu';
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
+
 import { cn } from '@/lib/utils';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
@@ -55,14 +33,6 @@ const MeetingRoom = () => {
   const router = useRouter();
   const [layout, setLayout] = useState<CallLayoutType>('speaker-left');
   const [showParticipants, setShowParticipants] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(false);
-  const [isHandRaised, setIsHandRaised] = useState(false);
-  const [showCaptions, setShowCaptions] = useState(false);
-  const [showReactions, setShowReactions] = useState(false);
-  const [showMeetingInfo, setShowMeetingInfo] = useState(false);
   const { useCallCallingState } = useCallStateHooks();
   const callingState = useCallCallingState();
   const call = useCall();
@@ -78,11 +48,9 @@ const MeetingRoom = () => {
 
       if (initialCameraEnabled === false) {
         call.camera.disable();
-        setIsVideoOff(true);
       }
       if (initialMicEnabled === false) {
         call.microphone.disable();
-        setIsMuted(true);
       }
     }
   }, [call]);
@@ -90,69 +58,13 @@ const MeetingRoom = () => {
   // Monitor participant state changes
   useEffect(() => {
     if (!call) return;
+
+
+
+
   }, [call]);
 
-  // Handle microphone toggle
-  const toggleMicrophone = async () => {
-    if (!call) return;
-    
-    try {
-      if (isMuted) {
-        await call.microphone.enable();
-        setIsMuted(false);
-      } else {
-        await call.microphone.disable();
-        setIsMuted(true);
-      }
-    } catch (error) {
-      console.error('Error toggling microphone:', error);
-    }
-  };
 
-  // Handle camera toggle
-  const toggleCamera = async () => {
-    if (!call) return;
-    
-    try {
-      if (isVideoOff) {
-        await call.camera.enable();
-        setIsVideoOff(false);
-      } else {
-        await call.camera.disable();
-        setIsVideoOff(true);
-      }
-    } catch (error) {
-      console.error('Error toggling camera:', error);
-    }
-  };
-
-  // Handle screen sharing toggle
-  const toggleScreenSharing = async () => {
-    if (!call) return;
-    
-    try {
-      // TODO: Implement screen sharing when Stream Video SDK supports it
-      setIsScreenSharing(!isScreenSharing);
-      console.log('Screen sharing feature coming soon');
-    } catch (error) {
-      console.error('Error toggling screen sharing:', error);
-    }
-  };
-
-  // Handle raise hand toggle
-  const toggleRaiseHand = () => {
-    setIsHandRaised(!isHandRaised);
-  };
-
-  // Handle captions toggle
-  const toggleCaptions = () => {
-    setShowCaptions(!showCaptions);
-  };
-
-  // Handle reactions toggle
-  const toggleReactions = () => {
-    setShowReactions(!showReactions);
-  };
 
   if (callingState !== CallingState.JOINED) {
     return (
@@ -192,6 +104,7 @@ const MeetingRoom = () => {
 
   return (
     <div className="relative flex h-screen flex-col bg-gradient-to-br from-gray-900 to-gray-800">
+
       
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
@@ -257,144 +170,52 @@ const MeetingRoom = () => {
         </AnimatePresence>
       </div>
 
-      {/* Google Meet-Style Floating Toolbar */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50">
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center gap-2 px-6 py-3 bg-gray-900/95 backdrop-blur-xl rounded-full border border-gray-800/50 shadow-2xl"
+      {/* Controls */}
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className="relative flex flex-wrap items-center justify-center gap-2 bg-gray-900/90 p-4 backdrop-blur-sm md:gap-4"
+      >
+        <CallControls 
+          onLeave={() => router.push('/')}
+        />
+
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg bg-gray-800 px-3 py-2 text-white transition-colors hover:bg-gray-700 md:px-4">
+            <LayoutList className="h-5 w-5" />
+            <span className="hidden text-sm md:inline">Layout</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="border-gray-700 bg-gray-800">
+            {['Grid', 'Speaker-Left', 'Speaker-Right'].map((item) => (
+              <DropdownMenuItem
+                key={item}
+                onClick={() => setLayout(item.toLowerCase() as CallLayoutType)}
+                className="text-white hover:bg-gray-700"
+              >
+                {item}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <CallStatsButton />
+
+        <button
+          onClick={() => setShowParticipants((prev) => !prev)}
+          className={cn(
+            "flex items-center gap-2 rounded-lg px-3 py-2 transition-colors md:px-4",
+            showParticipants 
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-800 text-white hover:bg-gray-700"
+          )}
         >
-          {/* Left Section - Meeting Info */}
-          <button
-            onClick={() => setShowMeetingInfo(!showMeetingInfo)}
-            className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 transition-all duration-200 hover:scale-105"
-            title="Meeting information (I)"
-          >
-            <Info className="h-5 w-5" />
-          </button>
+          <Users className="h-5 w-5" />
+          <span className="hidden text-sm md:inline">Participants ({participants.length})</span>
+        </button>
 
-          {/* Center Section - Core Controls */}
-          <div className="flex items-center gap-2">
-            {/* Mute/Unmute Button */}
-            <button
-              onClick={toggleMicrophone}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                isMuted 
-                  ? "bg-red-500 text-white hover:bg-red-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title={`${isMuted ? 'Unmute' : 'Mute'} microphone (M)`}
-            >
-              {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-            </button>
-
-            {/* Camera Toggle Button */}
-            <button
-              onClick={toggleCamera}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                isVideoOff 
-                  ? "bg-red-500 text-white hover:bg-red-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title={`Turn camera ${isVideoOff ? 'on' : 'off'} (V)`}
-            >
-              {isVideoOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-            </button>
-
-            {/* Screen Share Button */}
-            <button
-              onClick={toggleScreenSharing}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                isScreenSharing 
-                  ? "bg-blue-500 text-white hover:bg-blue-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title={`${isScreenSharing ? 'Stop' : 'Start'} screen sharing (S)`}
-            >
-              {isScreenSharing ? <MonitorOff className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
-            </button>
-
-            {/* Reactions Button */}
-            <button
-              onClick={toggleReactions}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                showReactions 
-                  ? "bg-blue-500 text-white hover:bg-blue-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title="Show reactions"
-            >
-              <Smile className="h-5 w-5" />
-            </button>
-
-            {/* Captions Button */}
-            <button
-              onClick={toggleCaptions}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                showCaptions 
-                  ? "bg-blue-500 text-white hover:bg-blue-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title={`Turn captions ${showCaptions ? 'off' : 'on'} (C)`}
-            >
-              <Type className="h-5 w-5" />
-            </button>
-
-            {/* Raise Hand Button */}
-            <button
-              onClick={toggleRaiseHand}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                isHandRaised 
-                  ? "bg-yellow-500 text-white hover:bg-yellow-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title={`${isHandRaised ? 'Lower' : 'Raise'} hand (H)`}
-            >
-              <Hand className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* Right Section - Meeting Controls */}
-          <div className="flex items-center gap-2">
-            {/* Participants Button */}
-            <button
-              onClick={() => setShowParticipants(!showParticipants)}
-              className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
-                showParticipants 
-                  ? "bg-blue-500 text-white hover:bg-blue-600" 
-                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
-              )}
-              title={`Show participants (${participants.length})`}
-            >
-              <Users className="h-5 w-5" />
-            </button>
-
-            {/* End Call Button */}
-            <button
-              onClick={() => router.push('/')}
-              className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all duration-200 hover:scale-105"
-              title="Leave call"
-            >
-              <PhoneOff className="h-5 w-5" />
-            </button>
-
-            {/* End Call for Everyone (Host Only) */}
-            {!isPersonalRoom && (
-              <div className="ml-2">
-                <EndCallButton />
-              </div>
-            )}
-          </div>
-        </motion.div>
-      </div>
+        {!isPersonalRoom && <EndCallButton />}
+      </motion.div>
     </div>
   );
 };

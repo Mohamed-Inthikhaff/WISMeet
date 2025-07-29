@@ -46,17 +46,17 @@ const MeetingPage = () => {
           // Error is already captured by ErrorBoundary component
         }}
       >
-        <StreamCall call={call}>
-          {!isSetupComplete ? (
+      <StreamCall call={call}>
+        {!isSetupComplete ? (
             <ErrorBoundary meetingId={call?.id} userId={user?.id}>
-              <MeetingSetup setIsSetupComplete={setIsSetupComplete} />
+          <MeetingSetup setIsSetupComplete={setIsSetupComplete} />
             </ErrorBoundary>
-          ) : (
+        ) : (
             <ErrorBoundary meetingId={call?.id} userId={user?.id}>
-              <MeetingRoom />
+          <MeetingRoom />
             </ErrorBoundary>
-          )}
-        </StreamCall>
+        )}
+      </StreamCall>
       </ErrorBoundary>
     </main>
   );
