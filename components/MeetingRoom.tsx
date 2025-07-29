@@ -241,9 +241,9 @@ const MeetingRoom = () => {
         transition={{ duration: 0.5 }}
         className="relative bg-gray-900/95 backdrop-blur-xl border-t border-gray-800/50"
       >
-        {/* Primary Controls - Center */}
+        {/* Single Row Controls */}
         <div className="flex items-center justify-center gap-3 p-4">
-          {/* Left Side - Audio/Video Controls */}
+          {/* Audio/Video Controls */}
           <div className="flex items-center gap-2">
             {/* Microphone Button */}
             <button
@@ -274,108 +274,99 @@ const MeetingRoom = () => {
             </button>
           </div>
 
-          {/* Center - Main Controls */}
-          <div className="flex items-center gap-3">
-            {/* Screen Share Button */}
-            <button
-              onClick={toggleScreenSharing}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
-                isScreenSharing 
-                  ? "bg-blue-600 text-white hover:bg-blue-700" 
-                  : "bg-gray-700 text-white hover:bg-gray-600"
-              )}
-              title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
-            >
-              {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-              <span className="hidden md:inline text-sm font-medium">Screen Share</span>
-            </button>
+          {/* Screen Share Button */}
+          <button
+            onClick={toggleScreenSharing}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
+              isScreenSharing 
+                ? "bg-blue-600 text-white hover:bg-blue-700" 
+                : "bg-gray-700 text-white hover:bg-gray-600"
+            )}
+            title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
+          >
+            {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+            <span className="hidden md:inline text-sm font-medium">Screen Share</span>
+          </button>
 
-            {/* Chat Button */}
-            <button
-              onClick={() => setShowChat(!showChat)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
-                showChat 
-                  ? "bg-blue-600 text-white hover:bg-blue-700" 
-                  : "bg-gray-700 text-white hover:bg-gray-600"
-              )}
-              title="Toggle chat"
-            >
-              <MessageSquare className="h-4 w-4" />
-              <span className="hidden md:inline text-sm font-medium">Chat</span>
-            </button>
-          </div>
+          {/* Chat Button */}
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
+              showChat 
+                ? "bg-blue-600 text-white hover:bg-blue-700" 
+                : "bg-gray-700 text-white hover:bg-gray-600"
+            )}
+            title="Toggle chat"
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span className="hidden md:inline text-sm font-medium">Chat</span>
+          </button>
 
-          {/* Right Side - Meeting Controls */}
-          <div className="flex items-center gap-2">
-            {/* Participants Button */}
-            <button
-              onClick={() => setShowParticipants(!showParticipants)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
-                showParticipants 
-                  ? "bg-blue-600 text-white hover:bg-blue-700" 
-                  : "bg-gray-700 text-white hover:bg-gray-600"
-              )}
-              title="Show participants"
-            >
-              <Users className="h-4 w-4" />
-              <span className="hidden md:inline text-sm font-medium">Participants ({participants.length})</span>
-            </button>
+          {/* Participants Button */}
+          <button
+            onClick={() => setShowParticipants(!showParticipants)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
+              showParticipants 
+                ? "bg-blue-600 text-white hover:bg-blue-700" 
+                : "bg-gray-700 text-white hover:bg-gray-600"
+            )}
+            title="Show participants"
+          >
+            <Users className="h-4 w-4" />
+            <span className="hidden md:inline text-sm font-medium">Participants ({participants.length})</span>
+          </button>
 
-            {/* Layout Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105">
-                <LayoutList className="h-4 w-4" />
-                <span className="hidden md:inline text-sm font-medium">Layout</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="border-gray-700 bg-gray-800">
-                {['Grid', 'Speaker-Left', 'Speaker-Right'].map((item) => (
-                  <DropdownMenuItem
-                    key={item}
-                    onClick={() => setLayout(item.toLowerCase() as CallLayoutType)}
-                    className="text-white hover:bg-gray-700"
-                  >
-                    {item}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* More Options */}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105">
-                <MoreHorizontal className="h-4 w-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="border-gray-700 bg-gray-800">
-                <DropdownMenuItem className="text-white hover:bg-gray-700">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
+          {/* Layout Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105">
+              <LayoutList className="h-4 w-4" />
+              <span className="hidden md:inline text-sm font-medium">Layout</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="border-gray-700 bg-gray-800">
+              {['Grid', 'Speaker-Left', 'Speaker-Right'].map((item) => (
+                <DropdownMenuItem
+                  key={item}
+                  onClick={() => setLayout(item.toLowerCase() as CallLayoutType)}
+                  className="text-white hover:bg-gray-700"
+                >
+                  {item}
                 </DropdownMenuItem>
-                <DropdownMenuItem className="text-white hover:bg-gray-700">
-                  <Volume2 className="h-4 w-4 mr-2" />
-                  Audio Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem className="text-white hover:bg-gray-700">
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share Meeting Link
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Secondary Controls - Bottom */}
-        <div className="flex items-center justify-center gap-4 pb-4 px-4">
+          {/* More Options */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105">
+              <MoreHorizontal className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="border-gray-700 bg-gray-800">
+              <DropdownMenuItem className="text-white hover:bg-gray-700">
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-white hover:bg-gray-700">
+                <Volume2 className="h-4 w-4 mr-2" />
+                Audio Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-white hover:bg-gray-700">
+                <Share2 className="h-4 w-4 mr-2" />
+                Share Meeting Link
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* Leave Call Button */}
           <button
             onClick={() => router.push('/')}
-            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105"
             title="Leave call"
           >
             <PhoneOff className="h-4 w-4" />
-            <span className="text-sm font-medium">Leave Call</span>
+            <span className="hidden md:inline text-sm font-medium">Leave Call</span>
           </button>
 
           {/* End Call for Everyone (Host Only) */}
