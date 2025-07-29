@@ -172,12 +172,7 @@ const MeetingSetup = ({
           await call.microphone.disable();
         }
 
-        // Verify participant state after joining
-        setTimeout(() => {
-          console.log('Call state after join:', call.state);
-          console.log('Participants after join:', call.state.participants);
-          console.log('Current user in call:', call.state.participants.find(p => p.userId === call.state.createdBy?.id));
-        }, 1000);
+
 
         setIsSetupComplete(true);
       }

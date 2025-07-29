@@ -21,9 +21,7 @@ const ParticipantSync = () => {
       const currentUser = participants.find((p: any) => p.userId === user.id);
       const otherParticipants = participants.filter((p: any) => p.userId !== user.id);
       
-      console.log('Current user in call:', currentUser);
-      console.log('Other participants:', otherParticipants);
-      console.log('Total participants:', participants.length);
+
 
       if (currentUser) {
         setSyncStatus(`Connected - ${participants.length} participants`);
@@ -44,16 +42,9 @@ const ParticipantSync = () => {
   useEffect(() => {
     if (!call) return;
 
-    const handleCallUpdated = (event: any) => {
-      console.log('🔄 Call updated:', event);
-    };
 
-    // Subscribe to call events
-    call.on('call.updated', handleCallUpdated);
 
-    return () => {
-      call.off('call.updated', handleCallUpdated);
-    };
+
   }, [call, participants.length]);
 
   // Debug info (only in development)

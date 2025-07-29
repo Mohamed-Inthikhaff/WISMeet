@@ -21,9 +21,7 @@ export const useGetCallById = (id: string | string[]) => {
 
         if (calls.length > 0) {
           const foundCall = calls[0];
-          console.log('Found call:', foundCall);
-          console.log('Call participants:', foundCall.state.participants);
-          console.log('Call members:', foundCall.state.members);
+
           setCall(foundCall);
         } else {
           setError('Call not found');

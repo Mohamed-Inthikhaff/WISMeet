@@ -22,8 +22,7 @@ import {
 } from './ui/dropdown-menu';
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
-import ParticipantSync from './ParticipantSync';
-import ParticipantVisibilityTest from './ParticipantVisibilityTest';
+
 import { cn } from '@/lib/utils';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
@@ -60,32 +59,12 @@ const MeetingRoom = () => {
   useEffect(() => {
     if (!call) return;
 
-    const handleParticipantJoined = (event: any) => {
-      console.log('Participant joined:', event);
-    };
 
-    const handleParticipantLeft = (event: any) => {
-      console.log('Participant left:', event);
-    };
 
-    const handleCallUpdated = (event: any) => {
-      console.log('Call updated:', event);
-    };
 
-    // Subscribe to participant events using the correct event types
-    call.on('call.updated', handleCallUpdated);
-
-    // Cleanup event listeners
-    return () => {
-      call.off('call.updated', handleCallUpdated);
-    };
   }, [call]);
 
-  // Log participant state for debugging
-  useEffect(() => {
-    console.log('Current participants:', participants);
-    console.log('Call state:', call?.state);
-  }, [participants, call?.state]);
+
 
   if (callingState !== CallingState.JOINED) {
     return (
@@ -125,9 +104,7 @@ const MeetingRoom = () => {
 
   return (
     <div className="relative flex h-screen flex-col bg-gradient-to-br from-gray-900 to-gray-800">
-      {/* Debug Components */}
-      <ParticipantSync />
-      <ParticipantVisibilityTest />
+
       
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
