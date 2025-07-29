@@ -11,7 +11,7 @@ import {
   useCall,
 } from '@stream-io/video-react-sdk';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, LayoutList, X, ChevronLeft } from 'lucide-react';
+import { Users, LayoutList, X, ChevronLeft, Mic, MicOff, Video, VideoOff, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import {
@@ -33,6 +33,8 @@ const MeetingRoom = () => {
   const router = useRouter();
   const [layout, setLayout] = useState<CallLayoutType>('speaker-left');
   const [showParticipants, setShowParticipants] = useState(false);
+  const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
   const { useCallCallingState } = useCallStateHooks();
   const callingState = useCallCallingState();
   const call = useCall();
@@ -58,11 +60,39 @@ const MeetingRoom = () => {
   // Monitor participant state changes
   useEffect(() => {
     if (!call) return;
-
-
-
-
   }, [call]);
+
+  // Toggle microphone
+  const toggleMicrophone = async () => {
+    if (!call) return;
+    try {
+      if (isMicEnabled) {
+        await call.microphone.disable();
+        setIsMicEnabled(false);
+      } else {
+        await call.microphone.enable();
+        setIsMicEnabled(true);
+      }
+    } catch (err) {
+      console.error('Error toggling microphone:', err);
+    }
+  };
+
+  // Toggle camera
+  const toggleCamera = async () => {
+    if (!call) return;
+    try {
+      if (isCameraEnabled) {
+        await call.camera.disable();
+        setIsCameraEnabled(false);
+      } else {
+        await call.camera.enable();
+        setIsCameraEnabled(true);
+      }
+    } catch (err) {
+      console.error('Error toggling camera:', err);
+    }
+  };
 
 
 
@@ -177,9 +207,112 @@ const MeetingRoom = () => {
         transition={{ duration: 0.5 }}
         className="relative flex flex-wrap items-center justify-center gap-2 bg-gray-900/90 p-4 backdrop-blur-sm md:gap-4"
       >
-        <CallControls 
-          onLeave={() => router.push('/')}
-        />
+        {/* Custom Pill-Style Microphone Toggle */}
+        <motion.button
+          onClick={toggleMicrophone}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className={`relative flex h-10 items-center overflow-hidden rounded-full transition-all duration-300 ${
+            isMicEnabled 
+              ? 'bg-blue-600 shadow-lg shadow-blue-600/25' 
+              : 'bg-gray-700 shadow-lg'
+          }`}
+          aria-pressed={isMicEnabled}
+          aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
+        >
+          {/* Left half - Icon */}
+          <motion.div
+            className="flex h-full w-12 items-center justify-center"
+            animate={{
+              backgroundColor: isMicEnabled ? '#1e40af' : '#374151'
+            }}
+            transition={{ duration: 0.3 }}
+          >
+            <motion.div
+              animate={{ 
+                scale: isMicEnabled ? 1 : 0.8,
+                opacity: isMicEnabled ? 1 : 0.7
+              }}
+              transition={{ duration: 0.2 }}
+            >
+              {isMicEnabled ? (
+                <Mic className="h-5 w-5 text-white" />
+              ) : (
+                <MicOff className="h-5 w-5 text-white" />
+              )}
+            </motion.div>
+          </motion.div>
+
+          {/* Right half - Chevron */}
+          <motion.div
+            className="flex h-full w-8 items-center justify-center"
+            animate={{
+              backgroundColor: isMicEnabled ? '#1e40af' : '#dc2626'
+            }}
+            transition={{ duration: 0.3 }}
+          >
+            <ChevronUp className="h-4 w-4 text-white" />
+          </motion.div>
+        </motion.button>
+
+        {/* Custom Pill-Style Camera Toggle */}
+        <motion.button
+          onClick={toggleCamera}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className={`relative flex h-10 items-center overflow-hidden rounded-full transition-all duration-300 ${
+            isCameraEnabled 
+              ? 'bg-blue-600 shadow-lg shadow-blue-600/25' 
+              : 'bg-gray-700 shadow-lg'
+          }`}
+          aria-pressed={isCameraEnabled}
+          aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
+        >
+          {/* Left half - Icon */}
+          <motion.div
+            className="flex h-full w-12 items-center justify-center"
+            animate={{
+              backgroundColor: isCameraEnabled ? '#1e40af' : '#374151'
+            }}
+            transition={{ duration: 0.3 }}
+          >
+            <motion.div
+              animate={{ 
+                scale: isCameraEnabled ? 1 : 0.8,
+                opacity: isCameraEnabled ? 1 : 0.7
+              }}
+              transition={{ duration: 0.2 }}
+            >
+              {isCameraEnabled ? (
+                <Video className="h-5 w-5 text-white" />
+              ) : (
+                <VideoOff className="h-5 w-5 text-white" />
+              )}
+            </motion.div>
+          </motion.div>
+
+          {/* Right half - Chevron */}
+          <motion.div
+            className="flex h-full w-8 items-center justify-center"
+            animate={{
+              backgroundColor: isCameraEnabled ? '#1e40af' : '#dc2626'
+            }}
+            transition={{ duration: 0.3 }}
+          >
+            <ChevronUp className="h-4 w-4 text-white" />
+          </motion.div>
+        </motion.button>
+
+        {/* Leave Call Button */}
+        <motion.button
+          onClick={() => router.push('/')}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="flex h-10 items-center gap-2 rounded-full bg-red-600 px-4 text-white transition-all duration-300 hover:bg-red-700 shadow-lg"
+          aria-label="Leave call"
+        >
+          <span className="text-sm font-medium">Leave</span>
+        </motion.button>
 
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg bg-gray-800 px-3 py-2 text-white transition-colors hover:bg-gray-700 md:px-4">
