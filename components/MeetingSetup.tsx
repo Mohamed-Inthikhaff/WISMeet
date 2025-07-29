@@ -13,7 +13,14 @@ import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
-import { Mic, MicOff, Video, VideoOff, Users, Settings, Volume2, Monitor } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Users, Settings, Volume2, Monitor, ChevronUp, ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from './ui/dropdown-menu';
 
 const MeetingSetup = ({
   setIsSetupComplete,
@@ -30,6 +37,8 @@ const MeetingSetup = ({
   const [showSettings, setShowSettings] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
   const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const [micDropdownOpen, setMicDropdownOpen] = useState(false);
+  const [cameraDropdownOpen, setCameraDropdownOpen] = useState(false);
 
   const call = useCall();
 
@@ -236,103 +245,169 @@ const MeetingSetup = ({
                     <span className="text-white">Camera {isCameraEnabled ? 'On' : 'Off'}</span>
                   </div>
 
-                  {/* Quick Controls */}
+                  {/* Enhanced Quick Controls with Dropdowns */}
                   <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-gray-900/90 p-3 backdrop-blur-sm">
-                    {/* Enhanced Microphone Toggle */}
-                    <motion.button
-                      onClick={toggleMicrophone}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
-                        isMicEnabled
-                          ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/20'
-                          : 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20'
-                      }`}
-                      title={isMicEnabled ? 'Turn off microphone' : 'Turn on microphone'}
-                    >
-                      {/* Background glow effect */}
-                      <div className={`absolute inset-0 rounded-xl ${
-                        isMicEnabled ? 'bg-green-500/10' : 'bg-red-500/10'
-                      }`} />
-                      
-                      {/* Icon with animation */}
-                      <motion.div
-                        initial={false}
-                        animate={{ 
-                          scale: isMicEnabled ? 1 : 0.8,
-                          opacity: isMicEnabled ? 1 : 0.7
-                        }}
-                        transition={{ duration: 0.2 }}
-                        className="relative z-10"
-                      >
-                        {isMicEnabled ? (
-                          <Mic className="h-6 w-6" />
-                        ) : (
-                          <MicOff className="h-6 w-6" />
-                        )}
-                      </motion.div>
-                      
-                      {/* Status indicator */}
-                      <motion.div
-                        initial={false}
-                        animate={{ 
-                          scale: isMicEnabled ? 1 : 0,
-                          opacity: isMicEnabled ? 1 : 0
-                        }}
-                        transition={{ duration: 0.2 }}
-                        className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
-                          isMicEnabled ? 'bg-green-500' : 'bg-red-500'
-                        }`}
-                      />
-                    </motion.button>
+                    {/* Enhanced Microphone Toggle with Dropdown */}
+                    <DropdownMenu open={micDropdownOpen} onOpenChange={setMicDropdownOpen}>
+                      <DropdownMenuTrigger asChild>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
+                            isMicEnabled
+                              ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/20'
+                              : 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20'
+                          }`}
+                          title={isMicEnabled ? 'Microphone settings' : 'Microphone settings'}
+                        >
+                          {/* Background glow effect */}
+                          <div className={`absolute inset-0 rounded-xl ${
+                            isMicEnabled ? 'bg-green-500/10' : 'bg-red-500/10'
+                          }`} />
+                          
+                          {/* Icon with animation */}
+                          <motion.div
+                            initial={false}
+                            animate={{ 
+                              scale: isMicEnabled ? 1 : 0.8,
+                              opacity: isMicEnabled ? 1 : 0.7
+                            }}
+                            transition={{ duration: 0.2 }}
+                            className="relative z-10"
+                          >
+                            {isMicEnabled ? (
+                              <Mic className="h-6 w-6" />
+                            ) : (
+                              <MicOff className="h-6 w-6" />
+                            )}
+                          </motion.div>
+                          
+                          {/* Status indicator */}
+                          <motion.div
+                            initial={false}
+                            animate={{ 
+                              scale: isMicEnabled ? 1 : 0,
+                              opacity: isMicEnabled ? 1 : 0
+                            }}
+                            transition={{ duration: 0.2 }}
+                            className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
+                              isMicEnabled ? 'bg-green-500' : 'bg-red-500'
+                            }`}
+                          />
+                        </motion.button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="border-gray-700 bg-gray-800/95 backdrop-blur-sm">
+                        <DropdownMenuItem 
+                          onClick={toggleMicrophone}
+                          className="flex items-center gap-3 text-white hover:bg-gray-700"
+                        >
+                          {isMicEnabled ? (
+                            <>
+                              <MicOff className="h-4 w-4 text-red-400" />
+                              <span>Mute Microphone</span>
+                            </>
+                          ) : (
+                            <>
+                              <Mic className="h-4 w-4 text-green-400" />
+                              <span>Unmute Microphone</span>
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-gray-700" />
+                        <DropdownMenuItem 
+                          onClick={() => setShowSettings(true)}
+                          className="flex items-center gap-3 text-white hover:bg-gray-700"
+                        >
+                          <Settings className="h-4 w-4 text-gray-400" />
+                          <span>Audio Settings</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 text-white hover:bg-gray-700">
+                          <Volume2 className="h-4 w-4 text-gray-400" />
+                          <span>Test Audio</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
-                    {/* Enhanced Camera Toggle */}
-                    <motion.button
-                      onClick={toggleCamera}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
-                        isCameraEnabled
-                          ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/20'
-                          : 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20'
-                      }`}
-                      title={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
-                    >
-                      {/* Background glow effect */}
-                      <div className={`absolute inset-0 rounded-xl ${
-                        isCameraEnabled ? 'bg-green-500/10' : 'bg-red-500/10'
-                      }`} />
-                      
-                      {/* Icon with animation */}
-                      <motion.div
-                        initial={false}
-                        animate={{ 
-                          scale: isCameraEnabled ? 1 : 0.8,
-                          opacity: isCameraEnabled ? 1 : 0.7
-                        }}
-                        transition={{ duration: 0.2 }}
-                        className="relative z-10"
-                      >
-                        {isCameraEnabled ? (
-                          <Video className="h-6 w-6" />
-                        ) : (
-                          <VideoOff className="h-6 w-6" />
-                        )}
-                      </motion.div>
-                      
-                      {/* Status indicator */}
-                      <motion.div
-                        initial={false}
-                        animate={{ 
-                          scale: isCameraEnabled ? 1 : 0,
-                          opacity: isCameraEnabled ? 1 : 0
-                        }}
-                        transition={{ duration: 0.2 }}
-                        className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
-                          isCameraEnabled ? 'bg-green-500' : 'bg-red-500'
-                        }`}
-                      />
-                    </motion.button>
+                    {/* Enhanced Camera Toggle with Dropdown */}
+                    <DropdownMenu open={cameraDropdownOpen} onOpenChange={setCameraDropdownOpen}>
+                      <DropdownMenuTrigger asChild>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
+                            isCameraEnabled
+                              ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/20'
+                              : 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20'
+                          }`}
+                          title={isCameraEnabled ? 'Camera settings' : 'Camera settings'}
+                        >
+                          {/* Background glow effect */}
+                          <div className={`absolute inset-0 rounded-xl ${
+                            isCameraEnabled ? 'bg-green-500/10' : 'bg-red-500/10'
+                          }`} />
+                          
+                          {/* Icon with animation */}
+                          <motion.div
+                            initial={false}
+                            animate={{ 
+                              scale: isCameraEnabled ? 1 : 0.8,
+                              opacity: isCameraEnabled ? 1 : 0.7
+                            }}
+                            transition={{ duration: 0.2 }}
+                            className="relative z-10"
+                          >
+                            {isCameraEnabled ? (
+                              <Video className="h-6 w-6" />
+                            ) : (
+                              <VideoOff className="h-6 w-6" />
+                            )}
+                          </motion.div>
+                          
+                          {/* Status indicator */}
+                          <motion.div
+                            initial={false}
+                            animate={{ 
+                              scale: isCameraEnabled ? 1 : 0,
+                              opacity: isCameraEnabled ? 1 : 0
+                            }}
+                            transition={{ duration: 0.2 }}
+                            className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
+                              isCameraEnabled ? 'bg-green-500' : 'bg-red-500'
+                            }`}
+                          />
+                        </motion.button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="border-gray-700 bg-gray-800/95 backdrop-blur-sm">
+                        <DropdownMenuItem 
+                          onClick={toggleCamera}
+                          className="flex items-center gap-3 text-white hover:bg-gray-700"
+                        >
+                          {isCameraEnabled ? (
+                            <>
+                              <VideoOff className="h-4 w-4 text-red-400" />
+                              <span>Turn Off Camera</span>
+                            </>
+                          ) : (
+                            <>
+                              <Video className="h-4 w-4 text-green-400" />
+                              <span>Turn On Camera</span>
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-gray-700" />
+                        <DropdownMenuItem 
+                          onClick={() => setShowSettings(true)}
+                          className="flex items-center gap-3 text-white hover:bg-gray-700"
+                        >
+                          <Settings className="h-4 w-4 text-gray-400" />
+                          <span>Video Settings</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 text-white hover:bg-gray-700">
+                          <Monitor className="h-4 w-4 text-gray-400" />
+                          <span>Background Effects</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                     {/* Settings Button */}
                     <motion.button
