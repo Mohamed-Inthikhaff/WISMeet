@@ -29,7 +29,11 @@ import {
   Share2,
   MoreHorizontal,
   Volume2,
-  VolumeX
+  VolumeX,
+  Info,
+  Smile,
+  Type,
+  Hand
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -55,6 +59,10 @@ const MeetingRoom = () => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isHandRaised, setIsHandRaised] = useState(false);
+  const [showCaptions, setShowCaptions] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [showMeetingInfo, setShowMeetingInfo] = useState(false);
   const { useCallCallingState } = useCallStateHooks();
   const callingState = useCallCallingState();
   const call = useCall();
@@ -118,7 +126,7 @@ const MeetingRoom = () => {
     }
   };
 
-  // Handle screen sharing toggle (placeholder for future implementation)
+  // Handle screen sharing toggle
   const toggleScreenSharing = async () => {
     if (!call) return;
     
@@ -129,6 +137,21 @@ const MeetingRoom = () => {
     } catch (error) {
       console.error('Error toggling screen sharing:', error);
     }
+  };
+
+  // Handle raise hand toggle
+  const toggleRaiseHand = () => {
+    setIsHandRaised(!isHandRaised);
+  };
+
+  // Handle captions toggle
+  const toggleCaptions = () => {
+    setShowCaptions(!showCaptions);
+  };
+
+  // Handle reactions toggle
+  const toggleReactions = () => {
+    setShowReactions(!showReactions);
   };
 
   if (callingState !== CallingState.JOINED) {
@@ -234,145 +257,144 @@ const MeetingRoom = () => {
         </AnimatePresence>
       </div>
 
-      {/* Enhanced Controls Toolbar */}
-      <motion.div 
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className="relative bg-gray-900/95 backdrop-blur-xl border-t border-gray-800/50"
-      >
-        {/* Single Row Controls */}
-        <div className="flex items-center justify-center gap-3 p-4">
-          {/* Audio/Video Controls */}
+      {/* Google Meet-Style Floating Toolbar */}
+      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50">
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+          className="flex items-center gap-2 px-6 py-3 bg-gray-900/95 backdrop-blur-xl rounded-full border border-gray-800/50 shadow-2xl"
+        >
+          {/* Left Section - Meeting Info */}
+          <button
+            onClick={() => setShowMeetingInfo(!showMeetingInfo)}
+            className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 transition-all duration-200 hover:scale-105"
+            title="Meeting information (I)"
+          >
+            <Info className="h-5 w-5" />
+          </button>
+
+          {/* Center Section - Core Controls */}
           <div className="flex items-center gap-2">
-            {/* Microphone Button */}
+            {/* Mute/Unmute Button */}
             <button
               onClick={toggleMicrophone}
               className={cn(
                 "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
                 isMuted 
                   ? "bg-red-500 text-white hover:bg-red-600" 
-                  : "bg-gray-700 text-white hover:bg-gray-600"
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
               )}
-              title={isMuted ? "Unmute microphone" : "Mute microphone"}
+              title={`${isMuted ? 'Unmute' : 'Mute'} microphone (M)`}
             >
               {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
             </button>
 
-            {/* Camera Button */}
+            {/* Camera Toggle Button */}
             <button
               onClick={toggleCamera}
               className={cn(
                 "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
                 isVideoOff 
                   ? "bg-red-500 text-white hover:bg-red-600" 
-                  : "bg-gray-700 text-white hover:bg-gray-600"
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
               )}
-              title={isVideoOff ? "Turn on camera" : "Turn off camera"}
+              title={`Turn camera ${isVideoOff ? 'on' : 'off'} (V)`}
             >
               {isVideoOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
             </button>
+
+            {/* Screen Share Button */}
+            <button
+              onClick={toggleScreenSharing}
+              className={cn(
+                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
+                isScreenSharing 
+                  ? "bg-blue-500 text-white hover:bg-blue-600" 
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
+              )}
+              title={`${isScreenSharing ? 'Stop' : 'Start'} screen sharing (S)`}
+            >
+              {isScreenSharing ? <MonitorOff className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
+            </button>
+
+            {/* Reactions Button */}
+            <button
+              onClick={toggleReactions}
+              className={cn(
+                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
+                showReactions 
+                  ? "bg-blue-500 text-white hover:bg-blue-600" 
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
+              )}
+              title="Show reactions"
+            >
+              <Smile className="h-5 w-5" />
+            </button>
+
+            {/* Captions Button */}
+            <button
+              onClick={toggleCaptions}
+              className={cn(
+                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
+                showCaptions 
+                  ? "bg-blue-500 text-white hover:bg-blue-600" 
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
+              )}
+              title={`Turn captions ${showCaptions ? 'off' : 'on'} (C)`}
+            >
+              <Type className="h-5 w-5" />
+            </button>
+
+            {/* Raise Hand Button */}
+            <button
+              onClick={toggleRaiseHand}
+              className={cn(
+                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
+                isHandRaised 
+                  ? "bg-yellow-500 text-white hover:bg-yellow-600" 
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
+              )}
+              title={`${isHandRaised ? 'Lower' : 'Raise'} hand (H)`}
+            >
+              <Hand className="h-5 w-5" />
+            </button>
           </div>
 
-          {/* Screen Share Button */}
-          <button
-            onClick={toggleScreenSharing}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
-              isScreenSharing 
-                ? "bg-blue-600 text-white hover:bg-blue-700" 
-                : "bg-gray-700 text-white hover:bg-gray-600"
+          {/* Right Section - Meeting Controls */}
+          <div className="flex items-center gap-2">
+            {/* Participants Button */}
+            <button
+              onClick={() => setShowParticipants(!showParticipants)}
+              className={cn(
+                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 hover:scale-105",
+                showParticipants 
+                  ? "bg-blue-500 text-white hover:bg-blue-600" 
+                  : "bg-gray-800/50 text-white hover:bg-gray-700/50"
+              )}
+              title={`Show participants (${participants.length})`}
+            >
+              <Users className="h-5 w-5" />
+            </button>
+
+            {/* End Call Button */}
+            <button
+              onClick={() => router.push('/')}
+              className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all duration-200 hover:scale-105"
+              title="Leave call"
+            >
+              <PhoneOff className="h-5 w-5" />
+            </button>
+
+            {/* End Call for Everyone (Host Only) */}
+            {!isPersonalRoom && (
+              <div className="ml-2">
+                <EndCallButton />
+              </div>
             )}
-            title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
-          >
-            {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-            <span className="hidden md:inline text-sm font-medium">Screen Share</span>
-          </button>
-
-          {/* Chat Button */}
-          <button
-            onClick={() => setShowChat(!showChat)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
-              showChat 
-                ? "bg-blue-600 text-white hover:bg-blue-700" 
-                : "bg-gray-700 text-white hover:bg-gray-600"
-            )}
-            title="Toggle chat"
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span className="hidden md:inline text-sm font-medium">Chat</span>
-          </button>
-
-          {/* Participants Button */}
-          <button
-            onClick={() => setShowParticipants(!showParticipants)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105",
-              showParticipants 
-                ? "bg-blue-600 text-white hover:bg-blue-700" 
-                : "bg-gray-700 text-white hover:bg-gray-600"
-            )}
-            title="Show participants"
-          >
-            <Users className="h-4 w-4" />
-            <span className="hidden md:inline text-sm font-medium">Participants ({participants.length})</span>
-          </button>
-
-          {/* Layout Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105">
-              <LayoutList className="h-4 w-4" />
-              <span className="hidden md:inline text-sm font-medium">Layout</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="border-gray-700 bg-gray-800">
-              {['Grid', 'Speaker-Left', 'Speaker-Right'].map((item) => (
-                <DropdownMenuItem
-                  key={item}
-                  onClick={() => setLayout(item.toLowerCase() as CallLayoutType)}
-                  className="text-white hover:bg-gray-700"
-                >
-                  {item}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* More Options */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105">
-              <MoreHorizontal className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="border-gray-700 bg-gray-800">
-              <DropdownMenuItem className="text-white hover:bg-gray-700">
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-white hover:bg-gray-700">
-                <Volume2 className="h-4 w-4 mr-2" />
-                Audio Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-white hover:bg-gray-700">
-                <Share2 className="h-4 w-4 mr-2" />
-                Share Meeting Link
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Leave Call Button */}
-          <button
-            onClick={() => router.push('/')}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 text-white transition-all duration-200 hover:bg-gray-600 hover:scale-105"
-            title="Leave call"
-          >
-            <PhoneOff className="h-4 w-4" />
-            <span className="hidden md:inline text-sm font-medium">Leave Call</span>
-          </button>
-
-          {/* End Call for Everyone (Host Only) */}
-          {!isPersonalRoom && <EndCallButton />}
-        </div>
-      </motion.div>
+          </div>
+        </motion.div>
+      </div>
     </div>
   );
 };
