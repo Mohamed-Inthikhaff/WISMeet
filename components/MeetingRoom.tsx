@@ -11,7 +11,7 @@ import {
   useCall,
 } from '@stream-io/video-react-sdk';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, LayoutList, X, ChevronLeft, Mic, MicOff, Video, VideoOff, ChevronUp } from 'lucide-react';
+import { Users, LayoutList, X, ChevronLeft, Video, VideoOff, Mic, MicOff, Square, Circle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import {
@@ -33,14 +33,26 @@ const MeetingRoom = () => {
   const router = useRouter();
   const [layout, setLayout] = useState<CallLayoutType>('speaker-left');
   const [showParticipants, setShowParticipants] = useState(false);
-  const [isMicEnabled, setIsMicEnabled] = useState(true);
-  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
-  const { useCallCallingState } = useCallStateHooks();
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [isProcessingRecording, setIsProcessingRecording] = useState(false);
+  const [recordingStopTime, setRecordingStopTime] = useState<Date | null>(null);
+  const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const callingState = useCallCallingState();
+  const localParticipant = useLocalParticipant();
   const call = useCall();
 
   // Get participants from call state
   const participants = call?.state.participants || [];
+
+  // Check if user is meeting owner (can start/stop recording)
+  const isMeetingOwner = localParticipant && call?.state.createdBy && 
+    localParticipant.userId === call.state.createdBy.id;
+
+  // Check if recording is enabled for this call
+  const canRecord = call?.state.custom?.allowRecording !== false;
+
+
 
   // Initialize devices based on setup preferences
   useEffect(() => {
@@ -60,41 +72,74 @@ const MeetingRoom = () => {
   // Monitor participant state changes
   useEffect(() => {
     if (!call) return;
-  }, [call]);
 
-  // Toggle microphone
-  const toggleMicrophone = async () => {
-    if (!call) return;
-    try {
-      if (isMicEnabled) {
-        await call.microphone.disable();
-        setIsMicEnabled(false);
-      } else {
-        await call.microphone.enable();
-        setIsMicEnabled(true);
+    // Monitor recording state
+    const checkRecordingState = () => {
+      const wasRecording = isRecording;
+      const isCurrentlyRecording = !!call.state.recording;
+      
+      if (isCurrentlyRecording !== wasRecording) {
+        setIsRecording(isCurrentlyRecording);
+        
+        // If recording just stopped, set processing state
+        if (wasRecording && !isCurrentlyRecording) {
+          setIsProcessingRecording(true);
+          setRecordingStopTime(new Date());
+        }
+        
+        // If recording started, clear processing state
+        if (!wasRecording && isCurrentlyRecording) {
+          setIsProcessingRecording(false);
+          setRecordingStopTime(null);
+        }
       }
-    } catch (err) {
-      console.error('Error toggling microphone:', err);
+      
+      // Check if we're still processing a recording that was stopped
+      if (isProcessingRecording && recordingStopTime) {
+        const timeSinceStop = Date.now() - recordingStopTime.getTime();
+        if (timeSinceStop > 60000) { // 60 seconds - longer timeout
+          setIsProcessingRecording(false);
+          setRecordingStopTime(null);
+        }
+      }
+    };
+
+    checkRecordingState();
+    
+    // Set up interval to check recording state - much less frequent
+    const interval = setInterval(checkRecordingState, 10000); // Changed to 10 seconds
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [call, isRecording, isProcessingRecording, recordingStopTime]);
+
+  // Handle recording start/stop
+  const toggleRecording = async () => {
+    if (!call || !isMeetingOwner) {
+      return;
+    }
+
+    try {
+      setRecordingError(null);
+      
+      if (isRecording) {
+        await call.stopRecording();
+      } else {
+        // Check if recording is already in progress
+        if (call.state.recording) {
+          setRecordingError('Recording is already in progress');
+          return;
+        }
+        
+        await call.startRecording();
+      }
+    } catch (error) {
+      console.error('Recording error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown recording error';
+      setRecordingError(`Failed to toggle recording: ${errorMessage}`);
     }
   };
-
-  // Toggle camera
-  const toggleCamera = async () => {
-    if (!call) return;
-    try {
-      if (isCameraEnabled) {
-        await call.camera.disable();
-        setIsCameraEnabled(false);
-      } else {
-        await call.camera.enable();
-        setIsCameraEnabled(true);
-      }
-    } catch (err) {
-      console.error('Error toggling camera:', err);
-    }
-  };
-
-
 
   if (callingState !== CallingState.JOINED) {
     return (
@@ -128,7 +173,11 @@ const MeetingRoom = () => {
           </div>
         );
       default:
-        return null;
+        return (
+          <div className="h-full w-full">
+            <SpeakerLayout participantsBarPosition="right" />
+          </div>
+        );
     }
   };
 
@@ -142,6 +191,65 @@ const MeetingRoom = () => {
         <div className="absolute -bottom-1/2 left-0 h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-[120px]" />
       </div>
 
+      {/* Recording Status Indicator */}
+      {isRecording && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-4 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-lg bg-red-500/90 px-4 py-2 text-white backdrop-blur-sm"
+        >
+          <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
+          <span className="text-sm font-medium">Recording</span>
+        </motion.div>
+      )}
+
+      {/* Recording Processing Indicator */}
+      {isProcessingRecording && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-16 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-lg bg-yellow-500/90 px-4 py-2 text-white backdrop-blur-sm"
+        >
+          <div className="h-2 w-2 rounded-full bg-white animate-spin" />
+          <span className="text-sm font-medium">Processing Recording...</span>
+          <button 
+            onClick={() => window.location.reload()}
+            className="ml-2 text-xs underline hover:no-underline"
+          >
+            Check Now
+          </button>
+        </motion.div>
+      )}
+
+      {/* Recording Success Indicator */}
+      {!isRecording && !isProcessingRecording && call?.state.recording && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-16 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-lg bg-green-500/90 px-4 py-2 text-white backdrop-blur-sm"
+        >
+          <div className="h-2 w-2 rounded-full bg-white" />
+          <span className="text-sm font-medium">Recording Ready</span>
+          <button 
+            onClick={() => window.location.reload()}
+            className="ml-2 text-xs underline hover:no-underline"
+          >
+            View
+          </button>
+        </motion.div>
+      )}
+
+      {/* Recording Error */}
+      {recordingError && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-4 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-lg bg-red-500/90 px-4 py-2 text-white backdrop-blur-sm"
+        >
+          <span className="text-sm font-medium">{recordingError}</span>
+        </motion.div>
+      )}
+
       {/* Main Content */}
       <div className="relative flex flex-1 overflow-hidden">
         {/* Video Layout */}
@@ -150,6 +258,10 @@ const MeetingRoom = () => {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
           className="relative flex flex-1 items-center justify-center p-4"
+          style={{ 
+            willChange: 'auto', // Prevent unnecessary GPU acceleration
+            transform: 'translateZ(0)' // Force hardware acceleration
+          }}
         >
           <div className="relative h-full w-full max-w-[1440px]">
             <CallLayout />
@@ -207,112 +319,52 @@ const MeetingRoom = () => {
         transition={{ duration: 0.5 }}
         className="relative flex flex-wrap items-center justify-center gap-2 bg-gray-900/90 p-4 backdrop-blur-sm md:gap-4"
       >
-        {/* Custom Pill-Style Microphone Toggle */}
-        <motion.button
-          onClick={toggleMicrophone}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`relative flex h-10 items-center overflow-hidden rounded-full transition-all duration-300 ${
-            isMicEnabled 
-              ? 'bg-blue-600 shadow-lg shadow-blue-600/25' 
-              : 'bg-gray-700 shadow-lg'
-          }`}
-          aria-pressed={isMicEnabled}
-          aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
-        >
-          {/* Left half - Icon */}
-          <motion.div
-            className="flex h-full w-12 items-center justify-center"
-            animate={{
-              backgroundColor: isMicEnabled ? '#1e40af' : '#374151'
-            }}
-            transition={{ duration: 0.3 }}
-          >
-            <motion.div
-              animate={{ 
-                scale: isMicEnabled ? 1 : 0.8,
-                opacity: isMicEnabled ? 1 : 0.7
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              {isMicEnabled ? (
-                <Mic className="h-5 w-5 text-white" />
-              ) : (
-                <MicOff className="h-5 w-5 text-white" />
-              )}
-            </motion.div>
-          </motion.div>
+        <CallControls 
+          onLeave={() => router.push('/')}
+        />
 
-          {/* Right half - Chevron */}
-          <motion.div
-            className="flex h-full w-8 items-center justify-center"
-            animate={{
-              backgroundColor: isMicEnabled ? '#1e40af' : '#dc2626'
-            }}
-            transition={{ duration: 0.3 }}
+        {/* Custom Recording Control */}
+        {isMeetingOwner && canRecord && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleRecording}
+            disabled={recordingError !== null}
+            className={cn(
+              "flex items-center gap-2 rounded-lg px-3 py-2 transition-colors md:px-4",
+              isRecording
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-gray-800 text-white hover:bg-gray-700"
+            )}
           >
-            <ChevronUp className="h-4 w-4 text-white" />
-          </motion.div>
-        </motion.button>
+            {isRecording ? (
+              <>
+                <Square className="h-5 w-5" />
+                <span className="hidden text-sm md:inline">Stop Recording</span>
+              </>
+            ) : (
+              <>
+                <Circle className="h-5 w-5" />
+                <span className="hidden text-sm md:inline">Start Recording</span>
+              </>
+            )}
+          </motion.button>
+        )}
 
-        {/* Custom Pill-Style Camera Toggle */}
-        <motion.button
-          onClick={toggleCamera}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`relative flex h-10 items-center overflow-hidden rounded-full transition-all duration-300 ${
-            isCameraEnabled 
-              ? 'bg-blue-600 shadow-lg shadow-blue-600/25' 
-              : 'bg-gray-700 shadow-lg'
-          }`}
-          aria-pressed={isCameraEnabled}
-          aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
-        >
-          {/* Left half - Icon */}
-          <motion.div
-            className="flex h-full w-12 items-center justify-center"
-            animate={{
-              backgroundColor: isCameraEnabled ? '#1e40af' : '#374151'
-            }}
-            transition={{ duration: 0.3 }}
+        {/* Manual Refresh Button */}
+        {isProcessingRecording && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-white transition-colors hover:bg-blue-700 md:px-4"
           >
-            <motion.div
-              animate={{ 
-                scale: isCameraEnabled ? 1 : 0.8,
-                opacity: isCameraEnabled ? 1 : 0.7
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              {isCameraEnabled ? (
-                <Video className="h-5 w-5 text-white" />
-              ) : (
-                <VideoOff className="h-5 w-5 text-white" />
-              )}
-            </motion.div>
-          </motion.div>
-
-          {/* Right half - Chevron */}
-          <motion.div
-            className="flex h-full w-8 items-center justify-center"
-            animate={{
-              backgroundColor: isCameraEnabled ? '#1e40af' : '#dc2626'
-            }}
-            transition={{ duration: 0.3 }}
-          >
-            <ChevronUp className="h-4 w-4 text-white" />
-          </motion.div>
-        </motion.button>
-
-        {/* Leave Call Button */}
-        <motion.button
-          onClick={() => router.push('/')}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className="flex h-10 items-center gap-2 rounded-full bg-red-600 px-4 text-white transition-all duration-300 hover:bg-red-700 shadow-lg"
-          aria-label="Leave call"
-        >
-          <span className="text-sm font-medium">Leave</span>
-        </motion.button>
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span className="hidden text-sm md:inline">Check Recordings</span>
+          </motion.button>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg bg-gray-800 px-3 py-2 text-white transition-colors hover:bg-gray-700 md:px-4">

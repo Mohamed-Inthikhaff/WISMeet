@@ -43,15 +43,28 @@ const CallList = ({ type }: { type: 'ended' | 'upcoming' | 'recordings' }) => {
 
   useEffect(() => {
     const fetchRecordings = async () => {
-      const callData = await Promise.all(
-        callRecordings?.map((meeting) => meeting.queryRecordings()) ?? [],
-      );
+      try {
+        const callData = await Promise.all(
+          callRecordings?.map(async (meeting) => {
+            try {
+              const recordings = await meeting.queryRecordings();
+              return recordings;
+            } catch (error) {
+              console.error('CallList: Error fetching recordings for call', meeting.id, error);
+              return { recordings: [] };
+            }
+          }) ?? [],
+        );
 
-      const recordings = callData
-        .filter((call) => call.recordings.length > 0)
-        .flatMap((call) => call.recordings);
-
-      setRecordings(recordings);
+        const recordings = callData
+          .filter((call) => call.recordings.length > 0)
+          .flatMap((call) => call.recordings);
+        
+        setRecordings(recordings);
+      } catch (error) {
+        console.error('CallList: Error fetching recordings:', error);
+        setRecordings([]);
+      }
     };
 
     if (type === 'recordings') {

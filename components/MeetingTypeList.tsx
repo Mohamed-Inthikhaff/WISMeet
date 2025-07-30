@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import HomeCard from './HomeCard';
 import MeetingModal from './MeetingModal';
+import ScheduleMeetingModal from './ScheduleMeetingModal';
 import { Call, useStreamVideoClient } from '@stream-io/video-react-sdk';
 import { useUser } from '@clerk/nextjs';
 import Loader from './Loader';
@@ -14,6 +15,16 @@ import "react-datepicker/dist/react-datepicker.css";
 import { useToast } from './ui/use-toast';
 import { Input } from './ui/input';
 import { getMeetingLink } from '@/lib/utils';
+
+interface MeetingData {
+  title: string;
+  guests: string[];
+  date: Date;
+  time: Date;
+  timezone: string;
+  notificationTime: number;
+  description: string;
+}
 
 const initialValues = {
   dateTime: new Date(),
@@ -33,8 +44,19 @@ const MeetingTypeList = () => {
   const { user } = useUser();
   const { toast } = useToast();
 
-  const createMeeting = async () => {
+  const createMeeting = async (meetingData?: MeetingData) => {
+    console.log('createMeeting called with:', { meetingData, meetingState, hasClient: !!client, hasUser: !!user });
+    
+    // Check if Stream API key is available
+    const streamApiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
+    console.log('Stream API Key check:', { hasApiKey: !!streamApiKey, apiKeyLength: streamApiKey?.length });
+    
     if (!client || !user) {
+      console.error('createMeeting: Missing client or user:', { 
+        hasClient: !!client, 
+        hasUser: !!user,
+        userId: user?.id 
+      });
       toast({ 
         title: 'Error',
         description: 'Please sign in to create a meeting',
@@ -45,15 +67,44 @@ const MeetingTypeList = () => {
 
     try {
       setIsCreating(true);
+      
       const id = crypto.randomUUID();
+      console.log('createMeeting: Generated meeting ID:', id);
+      
       const call = client.call('default', id);
       
       if (!call) {
-        throw new Error('Failed to create meeting');
+        throw new Error('Failed to create meeting - call object is null');
       }
 
-      const startsAt = values.dateTime.toISOString();
-      const description = values.description || 'Instant Meeting';
+      console.log('createMeeting: Call object created successfully');
+
+      // Use meetingData if provided (from new modal), otherwise use old values
+      let startsAt: string;
+      
+      if (meetingData && meetingData.date && meetingData.time) {
+        // For scheduled meetings with date/time data
+        startsAt = new Date(
+          meetingData.date.getFullYear(), 
+          meetingData.date.getMonth(), 
+          meetingData.date.getDate(),
+          meetingData.time.getHours(), 
+          meetingData.time.getMinutes()
+        ).toISOString();
+      } else {
+        // For instant meetings, use current time
+        startsAt = new Date().toISOString(); // Use current time instead of values.dateTime
+      }
+      
+      const description = meetingData?.title || values.description || 'Instant Meeting';
+      const meetingDescription = meetingData?.description || '';
+
+      console.log('createMeeting: Meeting data prepared:', {
+        startsAt,
+        description,
+        meetingDescription,
+        userId: user.id
+      });
 
       // Create member object with required fields
       const member = {
@@ -61,23 +112,33 @@ const MeetingTypeList = () => {
         role: 'host',
       };
 
+      console.log('createMeeting: Calling getOrCreate...');
+      
       await call.getOrCreate({
         data: {
           starts_at: startsAt,
           created_by_id: user.id,
-          members: [member], // Pass member object instead of just the ID
+          members: [member],
           custom: {
-            description,
+            description: description,
+            meetingDescription: meetingDescription,
             host: user.fullName || user.username,
-            allowGuestAccess: true, // Allow guests to join
-            guestPermissions: ['publish-audio', 'publish-video', 'create-data'] // Grant basic permissions to guests
+            guests: meetingData?.guests || [],
+            timezone: meetingData?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+            notificationTime: meetingData?.notificationTime || 15,
+            allowGuestAccess: true,
+            allowRecording: true, // Enable recording by default
+            guestPermissions: ['publish-audio', 'publish-video', 'create-data']
           },
         },
       });
 
+      console.log('createMeeting: Meeting created successfully, call ID:', call.id);
+
       setCallDetail(call);
       
       if (meetingState === 'isInstantMeeting') {
+        console.log('createMeeting: Redirecting to meeting room...');
         router.push(`/meeting/${call.id}`);
       }
 
@@ -89,6 +150,16 @@ const MeetingTypeList = () => {
       });
     } catch (error) {
       console.error('Error creating meeting:', error);
+      console.error('Error details:', {
+        client: !!client,
+        user: !!user,
+        userId: user?.id,
+        meetingState,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorKeys: error instanceof Error ? Object.keys(error) : []
+      });
       toast({ 
         title: 'Error',
         description: 'Failed to create meeting. Please try again.',
@@ -202,44 +273,11 @@ const MeetingTypeList = () => {
       />
 
       {!callDetail ? (
-        <MeetingModal
+        <ScheduleMeetingModal
           isOpen={meetingState === 'isScheduleMeeting'}
           onClose={() => setMeetingState(undefined)}
-          title="Schedule a Meeting"
-          description="Plan your next meeting with team members"
-          handleClick={createMeeting}
-        >
-          <div className="flex flex-col gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-200">
-                Meeting Description
-              </label>
-              <Textarea
-                placeholder="Enter meeting description..."
-                className="min-h-[100px] bg-gray-800/50 border-gray-700 focus:border-blue-500 focus:ring-blue-500"
-                value={values.description}
-                onChange={(e) => setValues({ ...values, description: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-200">
-                Date and Time
-              </label>
-              <ReactDatePicker
-                selected={values.dateTime}
-                onChange={(date) => setValues({ ...values, dateTime: date! })}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={15}
-                timeCaption="Time"
-                dateFormat="MMMM d, yyyy h:mm aa"
-                className="w-full rounded-lg bg-gray-800/50 border border-gray-700 p-2.5 text-white focus:border-blue-500 focus:ring-blue-500"
-                minDate={new Date()}
-              />
-            </div>
-          </div>
-        </MeetingModal>
+          onSchedule={createMeeting}
+        />
       ) : (
         <MeetingModal
           isOpen={meetingState === 'isScheduleMeeting'}
