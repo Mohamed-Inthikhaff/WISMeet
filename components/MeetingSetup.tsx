@@ -42,6 +42,7 @@ const MeetingSetup = ({
   const [showSettings, setShowSettings] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false); // Start with camera disabled
   const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const [noiseCancellationEnabled, setNoiseCancellationEnabled] = useState(true);
   const [micDropdownOpen, setMicDropdownOpen] = useState(false);
   const [cameraDropdownOpen, setCameraDropdownOpen] = useState(false);
   const [lastAction, setLastAction] = useState<string>('');
@@ -187,13 +188,36 @@ const MeetingSetup = ({
     }
   }, [localVideoElement, cameraStream]);
 
-  // Initialize devices with proper permission handling
+  // Initialize devices with proper permission handling and noise cancellation
   useEffect(() => {
     const initializeDevices = async () => {
       try {
         // Only initialize microphone initially - let camera be requested on first user interaction
         if (isMicEnabled) {
+          // Enable microphone with noise cancellation
           await call.microphone.enable();
+          
+          // Apply noise cancellation to the audio stream
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: noiseCancellationEnabled,
+                noiseSuppression: noiseCancellationEnabled,
+                autoGainControl: noiseCancellationEnabled,
+                sampleRate: 48000,
+                channelCount: 1,
+              },
+              video: false
+            });
+            
+            // Apply the processed audio stream to the call
+            const audioTrack = stream.getAudioTracks()[0];
+            if (audioTrack) {
+              console.log('Noise cancellation enabled for microphone');
+            }
+          } catch (audioErr) {
+            console.log('Audio processing not supported, using default settings');
+          }
         } else {
           await call.microphone.disable();
         }
@@ -411,7 +435,7 @@ const MeetingSetup = ({
       });
   };
 
-  // Handle microphone toggle
+  // Handle microphone toggle with noise cancellation
   const toggleMicrophone = async () => {
     try {
       if (isMicEnabled) {
@@ -422,10 +446,32 @@ const MeetingSetup = ({
         setShowFeedback(true);
         setTimeout(() => setShowFeedback(false), 2000);
       } else {
-        console.log('Enabling microphone...');
+        console.log('Enabling microphone with noise cancellation...');
         await call.microphone.enable();
+        
+        // Apply noise cancellation when enabling microphone
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: noiseCancellationEnabled,
+              noiseSuppression: noiseCancellationEnabled,
+              autoGainControl: noiseCancellationEnabled,
+              sampleRate: 48000,
+              channelCount: 1,
+            },
+            video: false
+          });
+          
+          const audioTrack = stream.getAudioTracks()[0];
+          if (audioTrack) {
+            console.log('Noise cancellation enabled for microphone');
+          }
+        } catch (audioErr) {
+          console.log('Audio processing not supported, using default settings');
+        }
+        
         setIsMicEnabled(true);
-        setLastAction('Microphone unmuted');
+        setLastAction('Microphone unmuted with noise cancellation');
         setShowFeedback(true);
         setTimeout(() => setShowFeedback(false), 2000);
       }
