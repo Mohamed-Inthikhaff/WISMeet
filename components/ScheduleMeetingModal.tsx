@@ -127,6 +127,24 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
     }));
   };
 
+  // Validate if selected date/time is in the past
+  const validateDateTime = (date: Date, time: Date): string | null => {
+    const now = new Date();
+    const selectedDate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      time.getHours(),
+      time.getMinutes()
+    );
+    
+    if (selectedDate <= now) {
+      return "Meeting cannot be scheduled in the past";
+    }
+    
+    return null;
+  };
+
   // Handle form submission
   const handleSubmit = () => {
     const newErrors: Record<string, string> = {};
@@ -146,6 +164,14 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
 
     if (!formData.time) {
       newErrors.time = "Time is required";
+    }
+
+    // Validate date/time combination
+    if (formData.date && formData.time) {
+      const dateTimeError = validateDateTime(formData.date, formData.time);
+      if (dateTimeError) {
+        newErrors.dateTime = dateTimeError;
+      }
     }
 
     setErrors(newErrors);
@@ -340,13 +366,22 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
                   <div className="relative">
                     <DatePicker
                       selected={formData.date}
-                      onChange={(date) => setFormData(prev => ({ ...prev, date: date || new Date() }))}
+                      onChange={(date) => {
+                        setFormData(prev => ({ ...prev, date: date || new Date() }));
+                        // Clear date/time error when valid date is selected
+                        if (date && formData.time) {
+                          const dateTimeError = validateDateTime(date, formData.time);
+                          if (!dateTimeError && errors.dateTime) {
+                            setErrors(prev => ({ ...prev, dateTime: undefined }));
+                          }
+                        }
+                      }}
                       dateFormat="MMMM d, yyyy"
                       minDate={new Date()}
                       className={cn(
                         "w-full bg-gray-800/50 border border-gray-600 text-white rounded-md px-3 py-2",
                         "focus:border-blue-500 focus:ring-blue-500/20 focus:outline-none",
-                        errors.date && "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                        (errors.date || errors.dateTime) && "border-red-500 focus:border-red-500 focus:ring-red-500/20"
                       )}
                       placeholderText="Select date"
                     />
@@ -372,7 +407,16 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
                   <div className="relative">
                     <DatePicker
                       selected={formData.time}
-                      onChange={(time) => setFormData(prev => ({ ...prev, time: time || new Date() }))}
+                      onChange={(time) => {
+                        setFormData(prev => ({ ...prev, time: time || new Date() }));
+                        // Clear date/time error when valid time is selected
+                        if (time && formData.date) {
+                          const dateTimeError = validateDateTime(formData.date, time);
+                          if (!dateTimeError && errors.dateTime) {
+                            setErrors(prev => ({ ...prev, dateTime: undefined }));
+                          }
+                        }
+                      }}
                       showTimeSelect
                       showTimeSelectOnly
                       timeIntervals={15}
@@ -381,7 +425,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
                       className={cn(
                         "w-full bg-gray-800/50 border border-gray-600 text-white rounded-md px-3 py-2",
                         "focus:border-blue-500 focus:ring-blue-500/20 focus:outline-none",
-                        errors.time && "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                        (errors.time || errors.dateTime) && "border-red-500 focus:border-red-500 focus:ring-red-500/20"
                       )}
                       placeholderText="Select time"
                     />
@@ -399,6 +443,22 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
                   )}
                 </div>
               </div>
+
+              {/* Date/Time Validation Error */}
+              {errors.dateTime && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-red-500/10 border border-red-500/20 rounded-lg p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-400" />
+                    <span className="text-red-400 text-sm font-medium">
+                      {errors.dateTime}
+                    </span>
+                  </div>
+                </motion.div>
+              )}
 
               {/* Timezone and Notification */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
