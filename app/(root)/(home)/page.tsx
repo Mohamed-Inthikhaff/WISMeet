@@ -9,6 +9,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { getMeetingLink } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const LoadingSpinner = () => (
   <div className="flex items-center gap-2 text-gray-400">
@@ -399,15 +400,26 @@ const Home = () => {
                 <h4 className="text-lg font-semibold text-white">Recent Recordings</h4>
                 <p className="text-sm text-gray-400">Your latest meeting recordings</p>
               </div>
-              <Link 
-                href="/recordings"
-                className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2"
-              >
-                View All
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+                <Link 
+                  href="/recordings"
+                  className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2"
+                >
+                  View All
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -441,6 +453,18 @@ const Home = () => {
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
                           Recording
                         </span>
+                        {(recording as any).recording_status && (
+                          <span className={cn(
+                            "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
+                            (recording as any).recording_status === 'ready' || (recording as any).recording_status === 'completed'
+                              ? "bg-green-500/10 text-green-400 border-green-500/20"
+                              : (recording as any).recording_status === 'processing'
+                              ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+                              : "bg-gray-500/10 text-gray-400 border-gray-500/20"
+                          )}>
+                            {(recording as any).recording_status}
+                          </span>
+                        )}
                       </div>
                     </div>
 
