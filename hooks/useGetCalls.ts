@@ -52,14 +52,22 @@ export const useGetCalls = () => {
         const recordingsResponse = await client.queryCalls({
           filter_conditions: {
             ended_at: { $exists: true },
-            recording_status: 'ready',
             $or: [
               { created_by_user_id: user.id },
               { members: { $in: [user.id] } }
             ]
           },
           sort: [{ field: 'ended_at', direction: -1 }],
-          limit: 10,
+          limit: 50, // Increased limit to catch more recordings
+        });
+
+        // Filter calls that have recordings
+        const callsWithRecordings = recordingsResponse.calls.filter(call => {
+          const hasRecordingStatus = (call as any).recording_status;
+          const hasRecordingCustom = (call as any).custom?.hasRecording;
+          const hasRecordingState = (call as any).state?.recording;
+          
+          return hasRecordingStatus || hasRecordingCustom || hasRecordingState;
         });
 
         // Initialize and load call objects
@@ -81,7 +89,7 @@ export const useGetCalls = () => {
         const [upcomingCallObjects, endedCallObjects, recordingCallObjects] = await Promise.all([
           initializeCallObjects(upcomingCallsResponse.calls),
           initializeCallObjects(endedCallsResponse.calls),
-          initializeCallObjects(recordingsResponse.calls)
+          initializeCallObjects(callsWithRecordings)
         ]);
 
         setUpcomingCalls(upcomingCallObjects);
