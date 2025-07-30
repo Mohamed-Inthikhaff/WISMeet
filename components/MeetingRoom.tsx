@@ -37,10 +37,23 @@ const MeetingRoom = () => {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [isProcessingRecording, setIsProcessingRecording] = useState(false);
   const [recordingStopTime, setRecordingStopTime] = useState<Date | null>(null);
+  const [devicesInitialized, setDevicesInitialized] = useState(false);
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const callingState = useCallCallingState();
   const localParticipant = useLocalParticipant();
   const call = useCall();
+  
+  // Check if any participant is screen sharing
+  const isScreenSharing = call?.state.participants.some(
+    participant => participant.publishedTracks.includes('screen')
+  ) || false;
+  
+  // Debug log for screen sharing detection
+  useEffect(() => {
+    if (isScreenSharing) {
+      console.log('Screen sharing detected! Switching to PiP layout');
+    }
+  }, [isScreenSharing]);
 
   // Get participants from call state
   const participants = call?.state.participants || [];
@@ -54,20 +67,28 @@ const MeetingRoom = () => {
 
 
 
-  // Initialize devices based on setup preferences
+  // Initialize devices based on setup preferences - only once
   useEffect(() => {
-    if (call) {
+    if (call && !devicesInitialized) {
       const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
       const initialMicEnabled = call.state.custom?.initialMicEnabled;
 
-      if (initialCameraEnabled === false) {
-        call.camera.disable();
-      }
-      if (initialMicEnabled === false) {
-        call.microphone.disable();
-      }
+      // Use a delay to ensure call is fully initialized
+      const timer = setTimeout(() => {
+        if (call) {
+          if (initialCameraEnabled === false) {
+            call.camera.disable();
+          }
+          if (initialMicEnabled === false) {
+            call.microphone.disable();
+          }
+        }
+        setDevicesInitialized(true);
+      }, 100);
+
+      return () => clearTimeout(timer);
     }
-  }, [call]);
+  }, [call?.id, devicesInitialized]); // Only run when call ID changes and devices not initialized
 
   // Monitor participant state changes
   useEffect(() => {
@@ -156,6 +177,28 @@ const MeetingRoom = () => {
   }
 
   const CallLayout = () => {
+    // If screen sharing is active, use picture-in-picture layout
+    if (isScreenSharing) {
+      return (
+        <div className="h-full w-full relative">
+          {/* Main screen share area - takes full space */}
+          <div className="h-full w-full">
+            <PaginatedGridLayout />
+          </div>
+          
+          {/* Picture-in-picture video overlay - small, draggable */}
+          <div className="absolute top-4 right-4 z-20">
+            <div className="w-80 h-60 bg-gray-900 rounded-lg border-2 border-gray-600 overflow-hidden shadow-2xl">
+              <div className="h-full w-full">
+                <SpeakerLayout participantsBarPosition="right" />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Normal layout when not screen sharing
     switch (layout) {
       case 'grid':
         return (
