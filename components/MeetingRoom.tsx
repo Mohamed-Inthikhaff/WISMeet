@@ -11,7 +11,7 @@ import {
   useCall,
 } from '@stream-io/video-react-sdk';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, LayoutList, X, ChevronLeft, Video, VideoOff, Mic, MicOff } from 'lucide-react';
+import { Users, LayoutList, X, ChevronLeft, Video, VideoOff, Mic, MicOff, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import {
@@ -22,6 +22,7 @@ import {
 } from './ui/dropdown-menu';
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
+import MeetingChat from './MeetingChat';
 
 import { cn } from '@/lib/utils';
 
@@ -33,6 +34,7 @@ const MeetingRoom = () => {
   const router = useRouter();
   const [layout, setLayout] = useState<CallLayoutType>('speaker-left');
   const [showParticipants, setShowParticipants] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [devicesInitialized, setDevicesInitialized] = useState(false);
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const callingState = useCallCallingState();
@@ -217,6 +219,13 @@ const MeetingRoom = () => {
             </motion.button>
           )}
         </AnimatePresence>
+
+        {/* Chat Component */}
+        <MeetingChat 
+          meetingId={call?.id || ''}
+          isOpen={showChat}
+          onClose={() => setShowChat(false)}
+        />
       </div>
 
       {/* Controls */}
@@ -265,6 +274,19 @@ const MeetingRoom = () => {
         >
           <Users className="h-5 w-5" />
           <span className="hidden text-sm md:inline">Participants ({participants.length})</span>
+        </button>
+
+        <button
+          onClick={() => setShowChat((prev) => !prev)}
+          className={cn(
+            "flex items-center gap-2 rounded-lg px-3 py-2 transition-colors md:px-4",
+            showChat 
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-800 text-white hover:bg-gray-700"
+          )}
+        >
+          <MessageSquare className="h-5 w-5" />
+          <span className="hidden text-sm md:inline">Chat</span>
         </button>
 
         {!isPersonalRoom && <EndCallButton />}
