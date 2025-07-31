@@ -9,6 +9,7 @@ const nextConfig = {
     NEXT_PUBLIC_STREAM_API_KEY: 'pmx7dhj5kn7j',
     STREAM_SECRET_KEY: '3jj98de3nez3v48zyaub4rzv72wgrhrfz2tabzbn29ntkkf628dxwttdgqphb3cg',
     NEXT_PUBLIC_BASE_URL: 'http://localhost:3000',
+    MONGODB_URI: 'mongodb://localhost:27017/wismeet',
   },
 };
 
