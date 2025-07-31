@@ -567,7 +567,7 @@ const Home = () => {
                   <p className="text-gray-400">View messages from your recent meetings</p>
                 </div>
                 <Link 
-                  href="/meetings/7a32dcc2-c051-4fc0-a9b6-f8ea3161089f/chat"
+                  href="/chat-history"
                   className="flex items-center gap-3 px-6 py-3 rounded-xl bg-gray-800/50 border border-gray-700/50 hover:bg-gray-800/70 transition-all duration-300 backdrop-blur-xl"
                 >
                   <span className="text-blue-400 font-medium">View All</span>
@@ -612,13 +612,13 @@ const Home = () => {
                   </div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-gray-700/50">
-                  <Link 
-                    href="/meetings/7a32dcc2-c051-4fc0-a9b6-f8ea3161089f/chat"
-                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2"
-                  >
-                    View Full Chat History
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
+                                  <Link 
+                  href="/chat-history"
+                  className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2"
+                >
+                  View Full Chat History
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
                 </div>
               </div>
             </motion.div>
