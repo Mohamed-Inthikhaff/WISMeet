@@ -43,6 +43,8 @@ const MeetingSetup = ({
   const [isCameraEnabled, setIsCameraEnabled] = useState(false); // Start with camera disabled
   const [isMicEnabled, setIsMicEnabled] = useState(true);
   const [noiseCancellationEnabled, setNoiseCancellationEnabled] = useState(true);
+  const [isJoining, setIsJoining] = useState(false);
+  const [hasJoined, setHasJoined] = useState(false);
   const [micDropdownOpen, setMicDropdownOpen] = useState(false);
   const [cameraDropdownOpen, setCameraDropdownOpen] = useState(false);
   const [lastAction, setLastAction] = useState<string>('');
@@ -316,7 +318,7 @@ const MeetingSetup = ({
         // Start camera stream directly
         const stream = await startCameraStream();
         if (stream) {
-          setIsCameraEnabled(true);
+        setIsCameraEnabled(true);
           setLastAction('Camera turned on');
           setShowFeedback(true);
           setTimeout(() => setShowFeedback(false), 2000);
@@ -411,6 +413,7 @@ const MeetingSetup = ({
     console.log('Camera stream exists:', !!cameraStream);
     console.log('Video element exists:', !!localVideoElement);
     console.log('Error state:', error);
+    console.log('Join state:', { isJoining, hasJoined });
     
     if (cameraStream) {
       console.log('Camera tracks:', cameraStream.getTracks().map(t => ({
@@ -434,6 +437,14 @@ const MeetingSetup = ({
         console.log('Permission query failed:', err);
       });
   };
+
+  // Reset join state when component unmounts
+  useEffect(() => {
+    return () => {
+      setIsJoining(false);
+      setHasJoined(false);
+    };
+  }, []);
 
   // Handle microphone toggle with noise cancellation
   const toggleMicrophone = async () => {
@@ -506,13 +517,23 @@ const MeetingSetup = ({
     }
   };
 
-  // Handle join meeting
+  // Handle join meeting with proper guards
   const handleJoinMeeting = async () => {
+    // Prevent multiple join attempts
+    if (isJoining || hasJoined) {
+      console.log('Join already in progress or completed');
+      return;
+    }
+
     try {
       if (!participantName.trim()) {
         setError('Please enter your name to join the meeting.');
         return;
       }
+
+      // Set joining state to prevent duplicate calls
+      setIsJoining(true);
+      setError(null);
 
       if (participantName) {
         // Set the participant name and device states in the call metadata
@@ -534,11 +555,15 @@ const MeetingSetup = ({
           await call.microphone.disable();
         }
 
+        // Mark as joined and complete setup
+        setHasJoined(true);
         setIsSetupComplete(true);
       }
     } catch (err) {
       console.error('Error joining meeting:', err);
       setError('Failed to join the meeting. Please try again.');
+      // Reset joining state on error
+      setIsJoining(false);
     }
   };
 
@@ -1036,7 +1061,7 @@ const MeetingSetup = ({
                           <Video className={`h-5 w-5 ${isCameraEnabled && cameraStream ? 'text-green-400' : 'text-red-400'}`} />
                         </motion.div>
                           <span className="text-sm text-gray-300">Camera</span>
-                      </div>
+                        </div>
                       <div className="flex items-center gap-2">
                         <motion.div
                           animate={{ 
@@ -1098,15 +1123,15 @@ const MeetingSetup = ({
                   <Button
                     className="w-full bg-gradient-to-r from-blue-600 to-purple-600 py-6 text-lg font-medium text-white transition-all hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600"
                     onClick={handleJoinMeeting}
-                    disabled={!participantName}
+                    disabled={!participantName || isJoining || hasJoined}
                   >
-                    Join Meeting
+                    {isJoining ? 'Joining...' : hasJoined ? 'Joined' : 'Join Meeting'}
                   </Button>
                     </TooltipTrigger>
                     <TooltipContent className="bg-gray-800 text-white border-gray-700">
                       <p>Join the meeting</p>
                       <p className="text-xs text-gray-400 mt-1">
-                        {participantName ? 'Ready to join' : 'Enter your name first'}
+                        {isJoining ? 'Joining meeting...' : hasJoined ? 'Already joined' : participantName ? 'Ready to join' : 'Enter your name first'}
                       </p>
                     </TooltipContent>
                   </Tooltip>
