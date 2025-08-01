@@ -135,6 +135,42 @@ const MeetingTypeList = () => {
 
       console.log('createMeeting: Meeting created successfully, call ID:', call.id);
 
+      // Save scheduled meeting to our database if it's a scheduled meeting
+      if (meetingData && meetingData.date && meetingData.time) {
+        try {
+          const startTime = new Date(
+            meetingData.date.getFullYear(), 
+            meetingData.date.getMonth(), 
+            meetingData.date.getDate(),
+            meetingData.time.getHours(), 
+            meetingData.time.getMinutes()
+          );
+
+          const response = await fetch('/api/meetings/scheduled', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              meetingId: call.id,
+              title: meetingData.title,
+              description: meetingData.description,
+              startTime: startTime.toISOString(),
+              endTime: new Date(startTime.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour duration
+              participants: meetingData.guests
+            }),
+          });
+
+          if (response.ok) {
+            console.log('Scheduled meeting saved to database');
+          } else {
+            console.error('Failed to save scheduled meeting to database');
+          }
+        } catch (error) {
+          console.error('Error saving scheduled meeting:', error);
+        }
+      }
+
       setCallDetail(call);
       
       if (meetingState === 'isInstantMeeting') {
