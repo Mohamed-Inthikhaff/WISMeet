@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import MeetingTypeList from '@/components/MeetingTypeList';
 import Image from 'next/image';
 import { useGetCalls } from '@/hooks/useGetCalls';
+import { useGetScheduledMeetings } from '@/hooks/useGetScheduledMeetings';
 import Link from 'next/link';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useEffect, useState } from 'react';
@@ -91,12 +92,37 @@ const Home = () => {
   const date = (new Intl.DateTimeFormat('en-US', { dateStyle: 'full' })).format(now);
   const { isLoaded: isUserLoaded, isSignedIn, user } = useUser();
   const [isClient, setIsClient] = useState(false);
+  
+  // State for chat history
+  const [chatHistory, setChatHistory] = useState<any>(null);
+  const [chatLoading, setChatLoading] = useState(true);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
+  // Fetch chat history
+  useEffect(() => {
+    const fetchChatHistory = async () => {
+      try {
+        setChatLoading(true);
+        const response = await fetch('/api/chat/history?limit=1&sortBy=recent');
+        const data = await response.json();
+        setChatHistory(data);
+      } catch (error) {
+        console.error('Error fetching chat history:', error);
+      } finally {
+        setChatLoading(false);
+      }
+    };
+
+    if (isSignedIn) {
+      fetchChatHistory();
+    }
+  }, [isSignedIn]);
+
   const { upcomingCalls, callRecordings, isLoading } = useGetCalls();
+  const { scheduledMeetings, isLoading: scheduledLoading } = useGetScheduledMeetings();
 
   // Show loading state while user authentication is being checked
   if (!isClient || !isUserLoaded) {
@@ -392,7 +418,7 @@ const Home = () => {
             
             <MeetingTypeList />
 
-            {/* Upcoming Meetings Section */}
+                        {/* Upcoming Meetings Section */}
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -420,7 +446,7 @@ const Home = () => {
                   <div className="col-span-full flex justify-center py-12">
                     <LoadingSpinner />
                   </div>
-                ) : upcomingCalls?.length === 0 ? (
+                ) : (upcomingCalls?.length === 0 && scheduledMeetings?.length === 0) ? (
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -447,110 +473,209 @@ const Home = () => {
                     </Link>
                   </motion.div>
                 ) : (
-                  upcomingCalls?.slice(0, 3).map((meeting, index) => (
-                    <motion.div
-                      key={meeting.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      whileHover={{ scale: 1.02, y: -4 }}
-                      className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-800/50 to-gray-900/50 p-6 border border-gray-700/30 hover:border-gray-600/50 transition-all duration-300 backdrop-blur-xl shadow-xl hover:shadow-2xl"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                      
-                      <div className="relative z-10">
-                        <div className="flex items-start justify-between mb-6">
-                          <div className="space-y-2">
-                            <h5 className="font-semibold text-white text-lg">
-                              {meeting.state.custom?.description || 'Scheduled Meeting'}
-                            </h5>
-                            <div className="flex flex-col gap-2">
-                              <div className="flex items-center gap-2 text-sm text-gray-400">
-                                <Calendar className="w-4 h-4" />
-                                <span>
-                                  {(meeting as any)._startsAt ? (
-                                    format((meeting as any)._startsAt, 'EEEE, MMMM d, yyyy')
-                                  ) : meeting.state.startsAt ? (
-                                    format(new Date(meeting.state.startsAt), 'EEEE, MMMM d, yyyy')
-                                  ) : (
-                                    'Date not set'
-                                  )}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-gray-400">
-                                <Clock className="w-4 h-4" />
-                                <span>
-                                  {(meeting as any)._startsAt ? (
-                                    format((meeting as any)._startsAt, 'h:mm a')
-                                  ) : meeting.state.startsAt ? (
-                                    format(new Date(meeting.state.startsAt), 'h:mm a')
-                                  ) : (
-                                    'Time not set'
-                                  )}
-                                </span>
+                  <>
+                    {/* Stream Calls */}
+                    {upcomingCalls?.slice(0, 2).map((meeting, index) => (
+                      <motion.div
+                        key={meeting.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        whileHover={{ scale: 1.02, y: -4 }}
+                        className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-800/50 to-gray-900/50 p-6 border border-gray-700/30 hover:border-gray-600/50 transition-all duration-300 backdrop-blur-xl shadow-xl hover:shadow-2xl"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        
+                        <div className="relative z-10">
+                          <div className="flex items-start justify-between mb-6">
+                            <div className="space-y-2">
+                              <h5 className="font-semibold text-white text-lg">
+                                {meeting.state.custom?.description || 'Scheduled Meeting'}
+                              </h5>
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2 text-sm text-gray-400">
+                                  <Calendar className="w-4 h-4" />
+                                  <span>
+                                    {(meeting as any)._startsAt ? (
+                                      format((meeting as any)._startsAt, 'EEEE, MMMM d, yyyy')
+                                    ) : meeting.state.startsAt ? (
+                                      format(new Date(meeting.state.startsAt), 'EEEE, MMMM d, yyyy')
+                                    ) : (
+                                      'Date not set'
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-gray-400">
+                                  <Clock className="w-4 h-4" />
+                                  <span>
+                                    {(meeting as any)._startsAt ? (
+                                      format((meeting as any)._startsAt, 'h:mm a')
+                                    ) : meeting.state.startsAt ? (
+                                      format(new Date(meeting.state.startsAt), 'h:mm a')
+                                    ) : (
+                                      'Time not set'
+                                    )}
+                                  </span>
+                                </div>
                               </div>
                             </div>
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                                Upcoming
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                              Upcoming
+
+                          <div className="flex items-center gap-3 mb-6">
+                            <div className="flex -space-x-2">
+                              {[1, 2, 3].map((_, i) => (
+                                <div
+                                  key={i}
+                                  className="size-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border-2 border-gray-800 flex items-center justify-center"
+                                >
+                                  <Users className="w-4 h-4 text-gray-400" />
+                                </div>
+                              ))}
+                            </div>
+                            <span className="text-sm text-gray-400">
+                              {meeting.state.members?.length || 0} Participants
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              • Hosted by {meeting.state.createdBy?.id === user?.id ? 'You' : 'Other'}
                             </span>
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-3 mb-6">
-                          <div className="flex -space-x-2">
-                            {[1, 2, 3].map((_, i) => (
-                              <div
-                                key={i}
-                                className="size-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border-2 border-gray-800 flex items-center justify-center"
-                              >
-                                <Users className="w-4 h-4 text-gray-400" />
-                              </div>
-                            ))}
+                          <div className="flex items-center gap-4">
+                            <Link
+                              href={`/meeting/${meeting.id}`}
+                              className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                            >
+                              <Video className="w-4 h-4" />
+                              Join Meeting
+                            </Link>
+                            <Link
+                              href={`/meetings/${meeting.id}/chat`}
+                              className="flex items-center gap-2 text-sm text-green-400 hover:text-green-300 transition-colors"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                              Chat History
+                            </Link>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(getMeetingLink(meeting.id));
+                              }}
+                              className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors"
+                            >
+                              <Copy className="w-4 h-4" />
+                              Copy Link
+                            </button>
                           </div>
-                          <span className="text-sm text-gray-400">
-                            {meeting.state.members?.length || 0} Participants
-                          </span>
-                          <span className="text-sm text-gray-400">
-                            • Hosted by {meeting.state.createdBy?.id === user?.id ? 'You' : 'Other'}
-                          </span>
                         </div>
 
-                        <div className="flex items-center gap-4">
-                          <Link 
-                            href={`/meeting/${meeting.id}`}
-                            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                          >
-                            <Video className="w-4 h-4" />
-                            Join Meeting
-                          </Link>
-                          <Link 
-                            href={`/meetings/${meeting.id}/chat`}
-                            className="flex items-center gap-2 text-sm text-green-400 hover:text-green-300 transition-colors"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                            Chat History
-                          </Link>
-                          <button 
-                            onClick={() => {
-                              navigator.clipboard.writeText(getMeetingLink(meeting.id));
-                              // You might want to add a toast notification here
-                            }}
-                            className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors"
-                          >
-                            <Copy className="w-4 h-4" />
-                            Copy Link
-                          </button>
-                        </div>
-                      </div>
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-purple-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500"></div>
+                      </motion.div>
+                    ))}
 
-                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-purple-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500"></div>
-                    </motion.div>
-                  ))
+                    {/* Scheduled Meetings */}
+                    {scheduledMeetings?.slice(0, 2).map((meeting, index) => (
+                      <motion.div
+                        key={`scheduled-${meeting.meetingId}`}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: (index + (upcomingCalls?.length || 0)) * 0.1 }}
+                        whileHover={{ scale: 1.02, y: -4 }}
+                        className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-800/50 to-gray-900/50 p-6 border border-gray-700/30 hover:border-gray-600/50 transition-all duration-300 backdrop-blur-xl shadow-xl hover:shadow-2xl"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-green-600/5 to-emerald-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        
+                        <div className="relative z-10">
+                          <div className="flex items-start justify-between mb-6">
+                            <div className="space-y-2">
+                              <h5 className="font-semibold text-white text-lg">
+                                {meeting.title}
+                              </h5>
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2 text-sm text-gray-400">
+                                  <Calendar className="w-4 h-4" />
+                                  <span>
+                                    {format(new Date(meeting.startTime), 'EEEE, MMMM d, yyyy')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-gray-400">
+                                  <Clock className="w-4 h-4" />
+                                  <span>
+                                    {format(new Date(meeting.startTime), 'h:mm a')}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                                Scheduled
+                              </span>
+                            </div>
+                          </div>
+
+                          {meeting.description && (
+                            <p className="text-sm text-gray-300 mb-6 line-clamp-2">
+                              {meeting.description}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-3 mb-6">
+                            <div className="flex -space-x-2">
+                              {[1, 2, 3].map((_, i) => (
+                                <div
+                                  key={i}
+                                  className="size-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border-2 border-gray-800 flex items-center justify-center"
+                                >
+                                  <Users className="w-4 h-4 text-gray-400" />
+                                </div>
+                              ))}
+                            </div>
+                            <span className="text-sm text-gray-400">
+                              {meeting.participants.length} Participants
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              • Hosted by {meeting.hostId === user?.id ? 'You' : 'Other'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <Link 
+                              href={`/meeting/${meeting.meetingId}`}
+                              className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                            >
+                              <Video className="w-4 h-4" />
+                              Join Meeting
+                            </Link>
+                            <Link
+                              href={`/meetings/${meeting.meetingId}/chat`}
+                              className="flex items-center gap-2 text-sm text-green-400 hover:text-green-300 transition-colors"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                              Chat History
+                            </Link>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(getMeetingLink(meeting.meetingId));
+                              }}
+                              className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors"
+                            >
+                              <Copy className="w-4 h-4" />
+                              Copy Link
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-green-500 to-emerald-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500"></div>
+                      </motion.div>
+                    ))}
+                  </>
                 )}
               </div>
             </motion.div>
+
 
             {/* Chat History Section */}
             <motion.div 
@@ -576,41 +701,78 @@ const Home = () => {
               </div>
 
               <div className="bg-gray-800/30 rounded-2xl p-6 border border-gray-700/50">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center">
-                    <MessageSquare className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h5 className="font-semibold text-white text-lg">Recent Meeting Chat</h5>
-                    <p className="text-sm text-gray-400">2 messages • 1 participant</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="h-8 w-8 rounded-full bg-green-600 flex items-center justify-center text-xs text-white font-medium">
-                      M
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-white">Mohamed Inthikhaff</span>
-                        <span className="text-xs text-gray-400">10:33 AM</span>
+                {chatLoading ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center">
+                        <MessageSquare className="w-5 h-5 text-white" />
                       </div>
-                      <p className="text-sm text-gray-300">hi</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="h-8 w-8 rounded-full bg-green-600 flex items-center justify-center text-xs text-white font-medium">
-                      M
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-white">Mohamed Inthikhaff</span>
-                        <span className="text-xs text-gray-400">10:33 AM</span>
+                      <div className="flex-1">
+                        <div className="h-4 bg-gray-700/50 rounded animate-pulse mb-2"></div>
+                        <div className="h-3 bg-gray-700/30 rounded animate-pulse"></div>
                       </div>
-                      <p className="text-sm text-gray-300">hi</p>
                     </div>
+                    {[...Array(2)].map((_, i) => (
+                      <div key={i} className="flex items-start gap-3">
+                        <div className="h-8 w-8 rounded-full bg-gray-700 animate-pulse"></div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3 bg-gray-700/50 rounded animate-pulse"></div>
+                          <div className="h-3 bg-gray-700/30 rounded animate-pulse w-3/4"></div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                ) : chatHistory?.meetings?.length > 0 ? (
+                  <>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center">
+                        <MessageSquare className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h5 className="font-semibold text-white text-lg">
+                          {chatHistory.meetings[0].title || 'Recent Meeting Chat'}
+                        </h5>
+                        <p className="text-sm text-gray-400">
+                          {chatHistory.meetings[0].messageCount || 0} messages • {chatHistory.meetings[0].participants?.length || 0} participants
+                        </p>
+                      </div>
+                    </div>
+                    {chatHistory.meetings[0].lastMessage ? (
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 rounded-full bg-green-600 flex items-center justify-center text-xs text-white font-medium">
+                            {chatHistory.meetings[0].lastMessage.senderName.charAt(0)}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-medium text-white">
+                                {chatHistory.meetings[0].lastMessage.senderName}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(chatHistory.meetings[0].lastMessage.timestamp).toLocaleTimeString('en-US', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-300">
+                              {chatHistory.meetings[0].lastMessage.message}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-gray-400 text-sm">No messages yet</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-4">
+                    <MessageSquare className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-gray-400 text-sm">No meetings with messages yet</p>
+                  </div>
+                )}
                 <div className="mt-4 pt-4 border-t border-gray-700/50">
                                   <Link 
                   href="/chat-history"
