@@ -1,5 +1,5 @@
 # Set environment variables
-$env:MONGODB_URI = "mongodb://localhost:27017/wismeet"
+$env:MONGODB_URI="mongodb+srv://mohamedinthikhaff:inthodals99@meetingassistant.qg7ih6p.mongodb.net/?retryWrites=true&w=majority&appName=MeetingAssistant"
 $env:NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_ZGVjaWRpbmctZWFyd2lnLTI1LmNsZXJrLmFjY291bnRzLmRldiQ"
 $env:CLERK_SECRET_KEY = "sk_test_i9fzVoV8TY8UvIAb3MwF3BoMY73APhfNJs7hOuNl48"
 $env:NEXT_PUBLIC_STREAM_API_KEY = "pmx7dhj5kn7j"
