@@ -45,19 +45,8 @@ const MeetingTypeList = () => {
   const { toast } = useToast();
 
   const createMeeting = async (meetingData?: MeetingData) => {
-    console.log('createMeeting called with:', { meetingData, meetingState, hasClient: !!client, hasUser: !!user });
-    
-    // Check if Stream API key is available
-    const streamApiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
-    console.log('Stream API Key check:', { hasApiKey: !!streamApiKey, apiKeyLength: streamApiKey?.length });
-    
     if (!client || !user) {
-      console.error('createMeeting: Missing client or user:', { 
-        hasClient: !!client, 
-        hasUser: !!user,
-        userId: user?.id 
-      });
-      toast({ 
+      toast({
         title: 'Error',
         description: 'Please sign in to create a meeting',
         variant: 'destructive'
@@ -65,68 +54,22 @@ const MeetingTypeList = () => {
       return;
     }
 
+    setIsCreating(true);
+
     try {
-      setIsCreating(true);
-      
-      const id = crypto.randomUUID();
-      console.log('createMeeting: Generated meeting ID:', id);
-      
-      const call = client.call('default', id);
-      
-      if (!call) {
-        throw new Error('Failed to create meeting - call object is null');
-      }
-
-      console.log('createMeeting: Call object created successfully');
-
-      // Use meetingData if provided (from new modal), otherwise use old values
-      let startsAt: string;
-      
-      if (meetingData && meetingData.date && meetingData.time) {
-        // For scheduled meetings with date/time data
-        startsAt = new Date(
-          meetingData.date.getFullYear(), 
-          meetingData.date.getMonth(), 
-          meetingData.date.getDate(),
-          meetingData.time.getHours(), 
-          meetingData.time.getMinutes()
-        ).toISOString();
-      } else {
-        // For instant meetings, use current time
-        startsAt = new Date().toISOString(); // Use current time instead of values.dateTime
-      }
-      
-      const description = meetingData?.title || values.description || 'Instant Meeting';
-      const meetingDescription = meetingData?.description || '';
-
-      console.log('createMeeting: Meeting data prepared:', {
-        startsAt,
-        description,
-        meetingDescription,
+      console.log('createMeeting: Starting meeting creation...', {
+        meetingState,
+        meetingData,
         userId: user.id
       });
 
-      // Create member object with required fields
-      const member = {
-        user_id: user.id,
-        role: 'host',
-      };
-
-      console.log('createMeeting: Calling getOrCreate...');
-      
-      await call.getOrCreate({
+      // Create the call
+      const call = await client.call('default', meetingData?.title || 'Instant Meeting', {
         data: {
-          starts_at: startsAt,
-          created_by_id: user.id,
-          members: [member],
           custom: {
-            description: description,
-            meetingDescription: meetingDescription,
-            host: user.fullName || user.username,
-            guests: meetingData?.guests || [],
-            timezone: meetingData?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-            notificationTime: meetingData?.notificationTime || 15,
-            allowGuestAccess: true,
+            description: meetingData?.description || 'Instant meeting',
+            hostId: user.id,
+            hostName: user.fullName || user.emailAddresses[0].emailAddress,
             allowRecording: true, // Enable recording by default
             guestPermissions: ['publish-audio', 'publish-video', 'create-data']
           },
@@ -146,6 +89,8 @@ const MeetingTypeList = () => {
             meetingData.time.getMinutes()
           );
 
+          const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+
           const response = await fetch('/api/meetings/scheduled', {
             method: 'POST',
             headers: {
@@ -156,13 +101,70 @@ const MeetingTypeList = () => {
               title: meetingData.title,
               description: meetingData.description,
               startTime: startTime.toISOString(),
-              endTime: new Date(startTime.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour duration
+              endTime: endTime.toISOString(),
               participants: meetingData.guests
             }),
           });
 
           if (response.ok) {
             console.log('Scheduled meeting saved to database');
+            
+            // Send invitation emails to guests
+            if (meetingData.guests && meetingData.guests.length > 0) {
+              try {
+                const invitationResponse = await fetch('/api/meetings/send-invitations', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    meetingId: call.id,
+                    title: meetingData.title,
+                    description: meetingData.description,
+                    startTime: startTime.toISOString(),
+                    endTime: endTime.toISOString(),
+                    guestEmails: meetingData.guests,
+                    hostName: user.fullName || user.emailAddresses[0].emailAddress
+                  }),
+                });
+
+                if (invitationResponse.ok) {
+                  const invitationResult = await invitationResponse.json();
+                  console.log('Invitation emails sent:', invitationResult);
+                  
+                  // Show success message with email statistics
+                  if (invitationResult.statistics) {
+                    const { successful, failed, total } = invitationResult.statistics;
+                    if (successful > 0) {
+                      toast({
+                        title: 'Meeting Scheduled & Invitations Sent',
+                        description: `Meeting created successfully! ${successful}/${total} invitation emails sent successfully.${failed > 0 ? ` ${failed} failed.` : ''}`,
+                      });
+                    } else {
+                      toast({
+                        title: 'Meeting Scheduled',
+                        description: 'Meeting created successfully, but invitation emails failed to send. Please check your email configuration.',
+                        variant: 'destructive'
+                      });
+                    }
+                  }
+                } else {
+                  console.error('Failed to send invitation emails');
+                  toast({
+                    title: 'Meeting Scheduled',
+                    description: 'Meeting created successfully, but invitation emails failed to send. Please check your email configuration.',
+                    variant: 'destructive'
+                  });
+                }
+              } catch (emailError) {
+                console.error('Error sending invitation emails:', emailError);
+                toast({
+                  title: 'Meeting Scheduled',
+                  description: 'Meeting created successfully, but invitation emails failed to send. Please check your email configuration.',
+                  variant: 'destructive'
+                });
+              }
+            }
           } else {
             console.error('Failed to save scheduled meeting to database');
           }
@@ -176,14 +178,15 @@ const MeetingTypeList = () => {
       if (meetingState === 'isInstantMeeting') {
         console.log('createMeeting: Redirecting to meeting room...');
         router.push(`/meeting/${call.id}`);
+      } else {
+        // For scheduled meetings, show success message and close modal
+        toast({
+          title: 'Success',
+          description: 'Meeting scheduled successfully! Invitation emails have been sent to your guests.',
+        });
+        setMeetingState(undefined);
       }
 
-      toast({
-        title: 'Success',
-        description: meetingState === 'isInstantMeeting' 
-          ? 'Meeting created! Redirecting...'
-          : 'Meeting scheduled successfully',
-      });
     } catch (error) {
       console.error('Error creating meeting:', error);
       console.error('Error details:', {

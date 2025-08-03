@@ -78,6 +78,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
     isValid: true,
     message: "",
   });
+  const [isSendingInvitations, setIsSendingInvitations] = useState(false);
 
   // Email validation function
   const validateEmail = (email: string): boolean => {
@@ -151,8 +152,9 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
+      setIsSendingInvitations(true);
       onSchedule(formData);
-      onClose();
+      // Note: onClose will be called after the meeting is created and invitations are sent
     }
   };
 
@@ -498,9 +500,17 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSchedule }: ScheduleMeetingMo
               <Button
                 type="button"
                 onClick={handleSubmit}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                disabled={isSendingInvitations}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Schedule Meeting
+                {isSendingInvitations ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Sending Invitations...
+                  </div>
+                ) : (
+                  "Schedule Meeting"
+                )}
               </Button>
             </motion.div>
           </div>
