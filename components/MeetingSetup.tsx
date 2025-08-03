@@ -191,54 +191,54 @@ const MeetingSetup = ({
   }, [localVideoElement, cameraStream]);
 
   // Initialize devices with proper permission handling and noise cancellation
-  useEffect(() => {
-    const initializeDevices = async () => {
-      try {
-        // Only initialize microphone initially - let camera be requested on first user interaction
-        if (isMicEnabled) {
-          // Enable microphone with noise cancellation
-          await call.microphone.enable();
-          
-          // Apply noise cancellation to the audio stream
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: noiseCancellationEnabled,
-                noiseSuppression: noiseCancellationEnabled,
-                autoGainControl: noiseCancellationEnabled,
-                sampleRate: 48000,
-                channelCount: 1,
-              },
-              video: false
-            });
-            
-            // Apply the processed audio stream to the call
-            const audioTrack = stream.getAudioTracks()[0];
-            if (audioTrack) {
-              console.log('Noise cancellation enabled for microphone');
-            }
-          } catch (audioErr) {
-            console.log('Audio processing not supported, using default settings');
-          }
-        } else {
-          await call.microphone.disable();
-        }
+  const initializeDevices = useCallback(async () => {
+    try {
+      // Only initialize microphone initially - let camera be requested on first user interaction
+      if (isMicEnabled) {
+        // Enable microphone with noise cancellation
+        await call.microphone.enable();
         
-        // Don't auto-start camera - wait for user interaction
-        if (!isCameraEnabled) {
-          await stopCameraStream();
+        // Apply noise cancellation to the audio stream
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: noiseCancellationEnabled,
+              noiseSuppression: noiseCancellationEnabled,
+              autoGainControl: noiseCancellationEnabled,
+              sampleRate: 48000,
+              channelCount: 1,
+            },
+            video: false
+          });
+          
+          // Apply the processed audio stream to the call
+          const audioTrack = stream.getAudioTracks()[0];
+          if (audioTrack) {
+            console.log('Noise cancellation enabled for microphone');
+          }
+        } catch (audioErr) {
+          console.log('Audio processing not supported, using default settings');
         }
-      } catch (err) {
-        console.error('Error initializing devices:', err);
-        setError('Failed to initialize devices. Please check permissions.');
+      } else {
+        await call.microphone.disable();
       }
-    };
+      
+      // Don't auto-start camera - wait for user interaction
+      if (!isCameraEnabled) {
+        await stopCameraStream();
+      }
+    } catch (err) {
+      console.error('Error initializing devices:', err);
+      setError('Failed to initialize devices. Please check permissions.');
+    }
+  }, [isMicEnabled, call.microphone, noiseCancellationEnabled, isCameraEnabled, stopCameraStream]);
 
+  useEffect(() => {
     initializeDevices();
-  }, [isMicEnabled, call.microphone, stopCameraStream]);
+  }, [initializeDevices]);
 
   // Initialize camera only when user first enables it
-  useEffect(() => {
+  const initializeCamera = useCallback(() => {
     if (isCameraEnabled && !cameraStream) {
       // Add a small delay to ensure video element is ready
       const timer = setTimeout(async () => {
@@ -254,6 +254,11 @@ const MeetingSetup = ({
     }
   }, [isCameraEnabled, cameraStream, startCameraStream]);
 
+  useEffect(() => {
+    const cleanup = initializeCamera();
+    return cleanup;
+  }, [initializeCamera]);
+
   // Cleanup camera stream on unmount
   useEffect(() => {
     return () => {
@@ -262,27 +267,24 @@ const MeetingSetup = ({
   }, [stopCameraStream]);
 
   // Monitor controls visibility
-  useEffect(() => {
-    const checkControlsVisibility = () => {
-      const micControls = document.querySelectorAll('[data-testid="mic-controls"]');
-      const cameraControls = document.querySelectorAll('[data-testid="camera-controls"]');
-      
-      // Only log if there are issues
-      if (micControls.length === 0 || cameraControls.length === 0) {
-        console.log('Controls visibility issue detected:', {
-          micControls: micControls.length,
-          cameraControls: cameraControls.length,
-          cameraEnabled: isCameraEnabled,
-          micEnabled: isMicEnabled
-        });
-      }
-    };
-
-    // Check after a short delay to ensure DOM is updated
-    const timeoutId = setTimeout(checkControlsVisibility, 100);
+  const checkControlsVisibility = useCallback(() => {
+    const micControls = document.querySelectorAll('[data-testid="mic-controls"]');
+    const cameraControls = document.querySelectorAll('[data-testid="camera-controls"]');
     
-    return () => clearTimeout(timeoutId);
+    // Only log if there are issues
+    if (micControls.length === 0 || cameraControls.length === 0) {
+      console.log('Controls visibility issue detected:', {
+        micControls: micControls.length,
+        cameraControls: cameraControls.length,
+        cameraEnabled: isCameraEnabled,
+        micEnabled: isMicEnabled
+      });
+    }
   }, [isCameraEnabled, isMicEnabled]);
+
+  useEffect(() => {
+    checkControlsVisibility();
+  }, [checkControlsVisibility]);
 
   // Handle camera toggle with better error handling and retry
   const toggleCamera = async () => {

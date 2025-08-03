@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   CallControls,
   CallParticipantsList,
@@ -25,6 +25,7 @@ import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
 
 import { cn } from '@/lib/utils';
+import { useChat } from '@/hooks/useChat';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
 
@@ -56,12 +57,8 @@ const MeetingRoom = () => {
   // Get participants from call state
   const participants = call?.state.participants || [];
 
-
-
-
-
   // Initialize devices based on setup preferences - only once
-  useEffect(() => {
+  const initializeDevices = useCallback(() => {
     if (call && !devicesInitialized) {
       const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
       const initialMicEnabled = call.state.custom?.initialMicEnabled;
@@ -81,8 +78,12 @@ const MeetingRoom = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [call?.id, devicesInitialized]); // Only run when call ID changes and devices not initialized
+  }, [call, devicesInitialized]);
 
+  useEffect(() => {
+    const cleanup = initializeDevices();
+    return cleanup;
+  }, [initializeDevices]);
 
 
   if (callingState !== CallingState.JOINED) {

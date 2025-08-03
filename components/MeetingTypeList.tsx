@@ -64,17 +64,7 @@ const MeetingTypeList = () => {
       });
 
       // Create the call
-      const call = await client.call('default', meetingData?.title || 'Instant Meeting', {
-        data: {
-          custom: {
-            description: meetingData?.description || 'Instant meeting',
-            hostId: user.id,
-            hostName: user.fullName || user.emailAddresses[0].emailAddress,
-            allowRecording: true, // Enable recording by default
-            guestPermissions: ['publish-audio', 'publish-video', 'create-data']
-          },
-        },
-      });
+      const call = await client.call('default', meetingData?.title || 'Instant Meeting');
 
       console.log('createMeeting: Meeting created successfully, call ID:', call.id);
 
