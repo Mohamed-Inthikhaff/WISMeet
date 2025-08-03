@@ -3,7 +3,7 @@ import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
 import { GetMessagesRequest, SendMessageRequest, Message } from '@/lib/types/chat';
 
-// GET /api/chat/messages?meetingId=xxx&limit=50&before=timestamp
+// GET /api/chat/messages?meetingId=xxx&limit=50&before=timestamp&page=1
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const meetingId = searchParams.get('meetingId');
     const limit = parseInt(searchParams.get('limit') || '50');
     const before = searchParams.get('before');
+    const page = parseInt(searchParams.get('page') || '1');
 
     if (!meetingId) {
       return NextResponse.json({ error: 'Meeting ID is required' }, { status: 400 });
@@ -22,6 +23,17 @@ export async function GET(request: NextRequest) {
 
     const db = await getDb();
     const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
+    const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
+
+    // Verify user has access to this meeting
+    const meeting = await meetingsCollection.findOne({ meetingId });
+    if (!meeting) {
+      return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+    }
+
+    if (meeting.hostId !== userId && !meeting.participants.includes(userId)) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
 
     // Build query
     const query: any = { meetingId };
@@ -29,20 +41,36 @@ export async function GET(request: NextRequest) {
       query.timestamp = { $lt: new Date(before) };
     }
 
+    // Calculate skip for pagination
+    const skip = (page - 1) * limit;
+
+    // Get total count for pagination
+    const totalCount = await messagesCollection.countDocuments(query);
+
     // Get messages with pagination
     const messages = await messagesCollection
       .find(query)
       .sort({ timestamp: -1 }) // Most recent first
+      .skip(skip)
       .limit(limit)
       .toArray();
 
     // Check if there are more messages
-    const hasMore = messages.length === limit;
+    const hasMore = skip + messages.length < totalCount;
+    const totalPages = Math.ceil(totalCount / limit);
 
     return NextResponse.json({
       messages: messages.reverse(), // Return in chronological order
       hasMore,
-      total: messages.length
+      total: messages.length,
+      totalCount,
+      pagination: {
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
     });
 
   } catch (error) {
