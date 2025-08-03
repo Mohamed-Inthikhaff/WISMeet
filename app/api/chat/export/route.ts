@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
+import { MessageReaction } from '@/lib/types/chat';
 
 // GET /api/chat/export?meetingId=xxx&format=json|csv
 export async function GET(request: NextRequest) {
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
       // Convert to CSV format
       const csvHeaders = 'Timestamp,Sender,Message,Type,Reactions\n';
       const csvRows = messages.map(msg => {
-        const reactions = msg.reactions.map(r => r.emoji).join(' ');
+        const reactions = msg.reactions.map((r: MessageReaction) => r.emoji).join(' ');
         return `"${new Date(msg.timestamp).toISOString()}","${msg.senderName}","${msg.message.replace(/"/g, '""')}","${msg.messageType}","${reactions}"`;
       }).join('\n');
       
