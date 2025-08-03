@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion } from 'framer-motion';
-import { MessageSquare, ArrowLeft, Clock, User, Send } from 'lucide-react';
+import { MessageSquare, ArrowLeft, Clock, User, Send, Download } from 'lucide-react';
 import { Message } from '@/lib/types/chat';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -17,6 +17,7 @@ const MeetingChatHistory = () => {
   const [meeting, setMeeting] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const fetchChatHistory = async () => {
@@ -52,6 +53,41 @@ const MeetingChatHistory = () => {
       fetchChatHistory();
     }
   }, [meetingId]);
+
+  const handleExport = async (format: 'json' | 'csv') => {
+    try {
+      setIsExporting(true);
+      const response = await fetch(`/api/chat/export?meetingId=${meetingId}&format=${format}`);
+      
+      if (format === 'csv') {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-export-${meetingId}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        const data = await response.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-export-${meetingId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Error exporting chat:', error);
+      alert('Failed to export chat');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const formatTime = (timestamp: Date) => {
     return format(new Date(timestamp), 'HH:mm');
@@ -98,20 +134,42 @@ const MeetingChatHistory = () => {
       {/* Header */}
       <div className="border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link 
-              href="/"
-              className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5" />
-              <span>Back to Dashboard</span>
-            </Link>
-            
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link 
+                href="/"
+                className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5" />
+                <span>Back to Dashboard</span>
+              </Link>
+              
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-6 w-6 text-blue-400" />
+                <h1 className="text-xl font-semibold text-white">
+                  Meeting Chat History
+                </h1>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-6 w-6 text-blue-400" />
-              <h1 className="text-xl font-semibold text-white">
-                Meeting Chat History
-              </h1>
+              <button
+                onClick={() => handleExport('json')}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Download className="h-4 w-4" />
+                Export JSON
+              </button>
+              <button
+                onClick={() => handleExport('csv')}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </button>
             </div>
           </div>
 
@@ -122,6 +180,8 @@ const MeetingChatHistory = () => {
                 <span>•</span>
                 <Clock className="h-4 w-4" />
                 <span>{formatDate(meeting.startTime)}</span>
+                <span>•</span>
+                <span>{messages.length} messages</span>
               </p>
             </div>
           )}
