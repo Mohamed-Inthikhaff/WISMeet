@@ -31,11 +31,18 @@ export const useGetScheduledMeetings = () => {
 
       try {
         setIsLoading(true);
-        const response = await fetch('/api/meetings/scheduled');
+        const response = await fetch('/api/meetings/scheduled?status=scheduled');
         const data = await response.json();
         
         if (data.success) {
-          setScheduledMeetings(data.meetings);
+          // Filter out past meetings on the client side as well
+          const now = new Date();
+          const futureMeetings = data.meetings.filter((meeting: ScheduledMeeting) => {
+            const meetingStartTime = new Date(meeting.startTime);
+            return meetingStartTime > now;
+          });
+          
+          setScheduledMeetings(futureMeetings);
         } else {
           console.error('Error fetching scheduled meetings:', data.error);
         }
@@ -48,8 +55,8 @@ export const useGetScheduledMeetings = () => {
 
     fetchScheduledMeetings();
 
-    // Set up periodic refresh
-    const intervalId = setInterval(fetchScheduledMeetings, 30000); // Refresh every 30 seconds
+    // Set up periodic refresh every 30 seconds
+    const intervalId = setInterval(fetchScheduledMeetings, 30000);
 
     return () => {
       clearInterval(intervalId);
