@@ -1,4 +1,4 @@
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient } from 'mongodb';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('Please add your Mongo URI to .env.local');
@@ -7,7 +7,7 @@ if (!process.env.MONGODB_URI) {
 const uri = process.env.MONGODB_URI;
 const options = {};
 
-let client: MongoClient;
+let client;
 let clientPromise: Promise<MongoClient>;
 
 if (process.env.NODE_ENV === 'development') {
@@ -32,14 +32,16 @@ if (process.env.NODE_ENV === 'development') {
 // separate module, the client can be shared across functions.
 export default clientPromise;
 
-export async function getDb(): Promise<Db> {
-  const client = await clientPromise;
-  return client.db();
-}
-
 // Database collections
 export const COLLECTIONS = {
   MEETINGS: 'meetings',
   MESSAGES: 'messages',
   CHAT_SESSIONS: 'chat_sessions',
-} as const; 
+  INVITATIONS: 'invitations'
+} as const;
+
+// Database connection and utility functions
+export const getDb = async () => {
+  const client = await clientPromise;
+  return client.db();
+}; 
