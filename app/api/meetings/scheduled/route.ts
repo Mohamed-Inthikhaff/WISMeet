@@ -2,6 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
 
+// Utility function to update meeting statuses
+const updateMeetingStatuses = async (db: any) => {
+  const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
+  const now = new Date();
+
+  // Update meetings that have started but not ended
+  await meetingsCollection.updateMany(
+    {
+      startTime: { $lte: now },
+      endTime: { $exists: false },
+      status: 'scheduled'
+    },
+    {
+      $set: { status: 'active', updatedAt: now }
+    }
+  );
+
+  // Update meetings that have ended
+  await meetingsCollection.updateMany(
+    {
+      endTime: { $lte: now },
+      status: { $in: ['scheduled', 'active'] }
+    },
+    {
+      $set: { status: 'ended', updatedAt: now }
+    }
+  );
+};
+
 // GET /api/meetings/scheduled
 export async function GET(request: NextRequest) {
   try {
@@ -15,6 +44,10 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
 
     const db = await getDb();
+    
+    // Update meeting statuses before fetching
+    await updateMeetingStatuses(db);
+    
     const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
 
     // Build query for scheduled meetings
@@ -27,12 +60,14 @@ export async function GET(request: NextRequest) {
 
     // Add status filter
     if (status === 'scheduled') {
-      query.startTime = { $gt: new Date().toISOString() };
+      // Show only future meetings (startTime > current time)
+      query.startTime = { $gt: new Date() };
+      query.status = 'scheduled';
     } else if (status === 'ended') {
-      query.endTime = { $exists: true };
+      query.status = 'ended';
     } else if (status === 'active') {
-      query.startTime = { $lte: new Date().toISOString() };
-      query.endTime = { $exists: false };
+      // Show meetings that have started but not ended
+      query.status = 'active';
     }
 
     // Fetch scheduled meetings
