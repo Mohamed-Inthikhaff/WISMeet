@@ -67,35 +67,31 @@ export async function GET(request: NextRequest) {
         countMap.set(item._id, item.count);
       });
 
+      // Add message counts to meetings
       meetings = meetings.map(meeting => ({
         ...meeting,
         messageCount: countMap.get(meeting.meetingId) || 0
       }));
+
+      // Get chat sessions for all meetings
+      const sessions = await chatSessionsCollection.find({
+        meetingId: { $in: meetingIds }
+      }).toArray();
+
+      const sessionMap = new Map();
+      sessions.forEach(session => {
+        sessionMap.set(session.meetingId, session);
+      });
+
+              // Add chat session info to meetings
+        meetings = meetings.map((meeting: any) => ({
+          ...meeting,
+          chatSession: sessionMap.get(meeting.meetingId) || null
+        }));
     }
 
-    // Get chat sessions for these meetings
-    const meetingIds = meetings.map(m => m.meetingId);
-    const chatSessions = await chatSessionsCollection
-      .find({
-        meetingId: { $in: meetingIds },
-        userId: queryUserId
-      })
-      .toArray();
-
-    // Create a map of meetingId to chat session
-    const sessionMap = new Map();
-    chatSessions.forEach(session => {
-      sessionMap.set(session.meetingId, session);
-    });
-
-    // Combine meetings with chat session info
-    const meetingsWithChat = meetings.map(meeting => ({
-      ...meeting,
-      chatSession: sessionMap.get(meeting.meetingId) || null
-    }));
-
     return NextResponse.json({
-      meetings: meetingsWithChat,
+      meetings: meetings,
       total: meetings.length
     });
 
