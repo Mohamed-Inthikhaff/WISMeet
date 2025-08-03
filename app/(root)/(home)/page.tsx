@@ -7,7 +7,7 @@ import { useGetCalls } from '@/hooks/useGetCalls';
 import { useGetScheduledMeetings } from '@/hooks/useGetScheduledMeetings';
 import Link from 'next/link';
 import { format, formatDistanceToNow } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { getMeetingLink } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -102,24 +102,24 @@ const Home = () => {
   }, []);
 
   // Fetch chat history
-  useEffect(() => {
-    const fetchChatHistory = async () => {
-      try {
-        setChatLoading(true);
-        const response = await fetch('/api/chat/history?limit=1&sortBy=recent');
-        const data = await response.json();
-        setChatHistory(data);
-      } catch (error) {
-        console.error('Error fetching chat history:', error);
-      } finally {
-        setChatLoading(false);
-      }
-    };
+  const fetchChatHistory = useCallback(async () => {
+    try {
+      setChatLoading(true);
+      const response = await fetch('/api/chat/history?limit=1&sortBy=recent');
+      const data = await response.json();
+      setChatHistory(data);
+    } catch (error) {
+      console.error('Error fetching chat history:', error);
+    } finally {
+      setChatLoading(false);
+    }
+  }, []);
 
+  useEffect(() => {
     if (isSignedIn) {
       fetchChatHistory();
     }
-  }, [isSignedIn]);
+  }, [isSignedIn, fetchChatHistory]);
 
   const { upcomingCalls, callRecordings, isLoading } = useGetCalls();
   const { scheduledMeetings, isLoading: scheduledLoading } = useGetScheduledMeetings();
