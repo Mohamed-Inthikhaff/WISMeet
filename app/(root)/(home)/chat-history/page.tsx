@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -61,20 +61,23 @@ const ChatHistoryPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState<any>(null);
 
-  const fetchChatHistory = async () => {
+  const fetchChatHistory = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
-        limit: '12',
         page: currentPage.toString(),
-        search,
-        sortBy,
-        filterBy
+        limit: '10',
+        search: search,
+        sortBy: sortBy,
+        filterBy: filterBy
       });
 
       const response = await fetch(`/api/chat/history?${params}`);
-      const data: ChatHistoryResponse = await response.json();
+      if (!response.ok) {
+        throw new Error('Failed to fetch chat history');
+      }
 
+      const data: ChatHistoryResponse = await response.json();
       setMeetings(data.meetings);
       setPagination(data.pagination);
     } catch (error) {
@@ -82,11 +85,11 @@ const ChatHistoryPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, search, sortBy, filterBy]);
 
   useEffect(() => {
     fetchChatHistory();
-  }, [search, sortBy, filterBy, currentPage]);
+  }, [fetchChatHistory]);
 
   const getSortIcon = () => {
     switch (sortBy) {
