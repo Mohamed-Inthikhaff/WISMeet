@@ -3,7 +3,7 @@ import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
 import { Meeting, ChatSession } from '@/lib/types/chat';
 
-// GET /api/chat/meetings?userId=xxx
+// GET /api/chat/meetings?userId=xxx&meetingId=xxx
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
@@ -13,23 +13,65 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const queryUserId = searchParams.get('userId') || userId;
+    const meetingId = searchParams.get('meetingId');
     const limit = parseInt(searchParams.get('limit') || '20');
 
     const db = await getDb();
     const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
     const chatSessionsCollection = db.collection(COLLECTIONS.CHAT_SESSIONS);
+    const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
 
-    // Get meetings where user participated
-    const meetings = await meetingsCollection
-      .find({
-        $or: [
-          { hostId: queryUserId },
-          { participants: queryUserId }
-        ]
-      })
-      .sort({ startTime: -1 })
-      .limit(limit)
-      .toArray();
+    let meetings;
+
+    if (meetingId) {
+      // Get specific meeting
+      const meeting = await meetingsCollection.findOne({ meetingId });
+      if (!meeting) {
+        return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+      }
+      
+      // Check if user has access to this meeting
+      if (meeting.hostId !== queryUserId && !meeting.participants.includes(queryUserId)) {
+        return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+      }
+      
+      // Get message count for this meeting
+      const messageCount = await messagesCollection.countDocuments({ meetingId });
+      
+      meetings = [{
+        ...meeting,
+        messageCount
+      }];
+    } else {
+      // Get meetings where user participated
+      meetings = await meetingsCollection
+        .find({
+          $or: [
+            { hostId: queryUserId },
+            { participants: queryUserId }
+          ]
+        })
+        .sort({ startTime: -1 })
+        .limit(limit)
+        .toArray();
+
+      // Get message counts for all meetings
+      const meetingIds = meetings.map(m => m.meetingId);
+      const messageCounts = await messagesCollection.aggregate([
+        { $match: { meetingId: { $in: meetingIds } } },
+        { $group: { _id: '$meetingId', count: { $sum: 1 } } }
+      ]).toArray();
+
+      const countMap = new Map();
+      messageCounts.forEach(item => {
+        countMap.set(item._id, item.count);
+      });
+
+      meetings = meetings.map(meeting => ({
+        ...meeting,
+        messageCount: countMap.get(meeting.meetingId) || 0
+      }));
+    }
 
     // Get chat sessions for these meetings
     const meetingIds = meetings.map(m => m.meetingId);
