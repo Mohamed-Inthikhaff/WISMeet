@@ -14,7 +14,7 @@ const emailConfig = {
 
 // Create transporter
 const createTransporter = () => {
-  return nodemailer.createTransporter(emailConfig);
+  return nodemailer.createTransport(emailConfig);
 };
 
 // Email templates
