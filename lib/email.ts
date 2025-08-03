@@ -3,12 +3,12 @@ import { format } from 'date-fns';
 
 // Email configuration
 const emailConfig = {
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.EMAIL_PORT || '587'),
   secure: false, // true for 465, false for other ports
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 };
 
@@ -32,7 +32,7 @@ const createInvitationEmail = (meetingData: {
   const formattedEndTime = format(meetingData.endTime, 'h:mm a');
 
   return {
-    from: `"WISMeet" <${process.env.SMTP_USER}>`,
+    from: `"WISMeet" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
     to: meetingData.guestEmail,
     subject: `Meeting Invitation: ${meetingData.title}`,
     html: `
