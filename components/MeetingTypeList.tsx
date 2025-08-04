@@ -14,7 +14,7 @@ import ReactDatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { useToast } from './ui/use-toast';
 import { Input } from './ui/input';
-import { getMeetingLink } from '@/lib/utils';
+import { getMeetingLink, sanitizeCallId } from '@/lib/utils';
 
 interface MeetingData {
   title: string;
@@ -64,7 +64,9 @@ const MeetingTypeList = () => {
       });
 
       // Create the call with a unique ID
-      const callId = meetingData?.title || `instant-${Date.now()}`;
+      const callId = meetingData?.title 
+        ? sanitizeCallId(meetingData.title) 
+        : `instant-${Date.now()}`;
       console.log('createMeeting: Creating call with ID:', callId);
       const call = await client.call('default', callId);
       
