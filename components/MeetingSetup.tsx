@@ -193,11 +193,44 @@ const MeetingSetup = ({
   // Initialize devices with proper permission handling and noise cancellation
   const initializeDevices = useCallback(async () => {
     try {
-      // Only initialize microphone initially - let camera be requested on first user interaction
+      console.log('Initializing devices with settings:', { isMicEnabled, isCameraEnabled });
+      
+      // Request microphone permissions first
       if (isMicEnabled) {
-        // Enable microphone with Stream's built-in audio handling
-        await call.microphone.enable();
-        console.log('Microphone enabled successfully');
+        try {
+          // Test microphone access before enabling with Stream
+          const audioStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false 
+          });
+          
+          console.log('Microphone permissions granted, enabling with Stream SDK');
+          
+          // Enable microphone with Stream's built-in audio handling
+          await call.microphone.enable();
+          console.log('Microphone enabled successfully with Stream SDK');
+          
+          // Verify the audio track is active
+          const audioTracks = audioStream.getAudioTracks();
+          if (audioTracks.length > 0 && audioTracks[0].enabled) {
+            console.log('Audio track verified as active');
+          } else {
+            console.warn('Audio track not properly enabled');
+          }
+          
+          // Stop the test stream after verification
+          audioStream.getTracks().forEach(track => track.stop());
+          
+        } catch (audioErr) {
+          console.error('Failed to get microphone permissions:', audioErr);
+          setError('Microphone access denied. Please allow microphone permissions and refresh the page.');
+          setIsMicEnabled(false);
+          return;
+        }
       } else {
         await call.microphone.disable();
         console.log('Microphone disabled');
@@ -209,7 +242,7 @@ const MeetingSetup = ({
       }
     } catch (err) {
       console.error('Error initializing devices:', err);
-      setError('Failed to initialize devices. Please check permissions.');
+      setError('Failed to initialize devices. Please check permissions and refresh the page.');
     }
   }, [isMicEnabled, call.microphone, isCameraEnabled, stopCameraStream]);
 
@@ -447,11 +480,27 @@ const MeetingSetup = ({
       console.log('Microphone test successful:', {
         trackCount: stream.getTracks().length,
         audioTracks: stream.getAudioTracks().length,
-        trackEnabled: stream.getAudioTracks()[0]?.enabled
+        trackEnabled: stream.getAudioTracks()[0]?.enabled,
+        trackId: stream.getAudioTracks()[0]?.id,
+        trackLabel: stream.getAudioTracks()[0]?.label,
+        trackReadyState: stream.getAudioTracks()[0]?.readyState
       });
+      
+      // Test audio levels
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      source.connect(analyser);
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+      
+      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+      console.log('Audio level test:', { average, hasAudio: average > 0 });
       
       // Stop the test stream
       stream.getTracks().forEach(track => track.stop());
+      audioContext.close();
       
       setLastAction('Microphone test successful');
       setShowFeedback(true);
@@ -460,6 +509,56 @@ const MeetingSetup = ({
     } catch (err) {
       console.error('Microphone test failed:', err);
       setError('Microphone test failed. Please check permissions.');
+    }
+  };
+
+  // Debug audio state function
+  const debugAudioState = async () => {
+    try {
+      console.log('=== Audio Debug Information ===');
+      
+      // Check available devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioDevices = devices.filter(device => device.kind === 'audioinput');
+      
+      console.log('Available audio devices:', audioDevices.map(d => ({
+        deviceId: d.deviceId,
+        label: d.label,
+        groupId: d.groupId
+      })));
+      
+      // Check current permissions
+      const permissions = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      console.log('Microphone permission state:', permissions.state);
+      
+      // Check Stream SDK microphone state
+      if (call) {
+        console.log('Stream microphone state:', {
+          localState: isMicEnabled,
+          // Note: Stream SDK doesn't expose isEnabled/isMuted/hasAudio properties
+          // We rely on local state management
+        });
+      }
+      
+      // Test current audio stream
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Current audio stream:', {
+          trackCount: stream.getTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          trackEnabled: stream.getAudioTracks()[0]?.enabled,
+          trackMuted: stream.getAudioTracks()[0]?.muted,
+          trackReadyState: stream.getAudioTracks()[0]?.readyState
+        });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (streamErr) {
+        console.error('Failed to get audio stream for debugging:', streamErr);
+      }
+      
+      console.log('=== End Audio Debug ===');
+      
+    } catch (err) {
+      console.error('Audio debug failed:', err);
     }
   };
 
@@ -475,27 +574,55 @@ const MeetingSetup = ({
         setTimeout(() => setShowFeedback(false), 2000);
       } else {
         console.log('Enabling microphone...');
-        await call.microphone.enable();
         
-        // Apply noise cancellation settings if enabled
-        if (noiseCancellationEnabled) {
-          try {
-            // Note: Stream SDK handles audio processing internally
-            // We'll rely on the browser's built-in noise cancellation
-            console.log('Noise cancellation enabled - using browser defaults');
-          } catch (audioErr) {
-            console.log('Audio processing not supported, using default settings');
+        // First test microphone access
+        try {
+          const audioStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false 
+          });
+          
+          // Verify audio track is available
+          const audioTracks = audioStream.getAudioTracks();
+          if (audioTracks.length === 0) {
+            throw new Error('No audio tracks available');
           }
+          
+          // Stop the test stream
+          audioStream.getTracks().forEach(track => track.stop());
+          
+          // Now enable with Stream SDK
+          await call.microphone.enable();
+          
+          // Apply noise cancellation settings if enabled
+          if (noiseCancellationEnabled) {
+            try {
+              // Note: Stream SDK handles audio processing internally
+              // We'll rely on the browser's built-in noise cancellation
+              console.log('Noise cancellation enabled - using browser defaults');
+            } catch (audioErr) {
+              console.log('Audio processing not supported, using default settings');
+            }
+          }
+          
+          setIsMicEnabled(true);
+          setLastAction('Microphone unmuted');
+          setShowFeedback(true);
+          setTimeout(() => setShowFeedback(false), 2000);
+          
+        } catch (audioErr) {
+          console.error('Failed to access microphone:', audioErr);
+          setError('Microphone access denied. Please check browser permissions and try again.');
+          return;
         }
-        
-        setIsMicEnabled(true);
-        setLastAction('Microphone unmuted');
-        setShowFeedback(true);
-        setTimeout(() => setShowFeedback(false), 2000);
       }
     } catch (err) {
       console.error('Error toggling microphone:', err);
-      setError('Failed to toggle microphone. Please check permissions.');
+      setError('Failed to toggle microphone. Please check permissions and try again.');
     }
   };
 
@@ -853,6 +980,13 @@ const MeetingSetup = ({
                               >
                                 <Volume2 className="h-4 w-4 text-gray-400" />
                                 <span>Test Microphone</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={debugAudioState}
+                                className="flex items-center gap-3 text-white hover:bg-gray-700"
+                              >
+                                <Info className="h-4 w-4 text-gray-400" />
+                                <span>Debug Audio</span>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>

@@ -74,18 +74,45 @@ const MeetingRoom = () => {
       const timer = setTimeout(async () => {
         if (call) {
           try {
-            // Initialize microphone first
+            // Initialize microphone first with proper error handling
             if (initialMicEnabled === false) {
               await call.microphone.disable();
               console.log('Microphone disabled on join');
             } else {
-              await call.microphone.enable();
-              console.log('Microphone enabled on join');
-              
-              // Verify microphone is actually enabled
-              setTimeout(() => {
-                console.log('Microphone enabled on join - verification complete');
-              }, 1000);
+              // Test microphone access before enabling
+              try {
+                const audioStream = await navigator.mediaDevices.getUserMedia({ 
+                  audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                  },
+                  video: false 
+                });
+                
+                // Verify audio track is available
+                const audioTracks = audioStream.getAudioTracks();
+                if (audioTracks.length > 0) {
+                  console.log('Microphone access verified, enabling with Stream SDK');
+                  await call.microphone.enable();
+                  console.log('Microphone enabled on join');
+                  
+                  // Verify microphone is actually enabled
+                  setTimeout(() => {
+                    console.log('Microphone enabled on join - verification complete');
+                  }, 1000);
+                } else {
+                  console.warn('No audio tracks available, microphone may not work');
+                  await call.microphone.enable(); // Still try to enable
+                }
+                
+                // Stop the test stream
+                audioStream.getTracks().forEach(track => track.stop());
+                
+              } catch (audioErr) {
+                console.error('Failed to access microphone on join:', audioErr);
+                // Don't fail the join, but log the issue
+              }
             }
             
             // Initialize camera
