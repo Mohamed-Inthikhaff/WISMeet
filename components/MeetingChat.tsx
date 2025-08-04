@@ -53,14 +53,30 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
   const fetchMessages = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null); // Clear previous errors
+      
       const response = await fetch(`/api/chat/messages?meetingId=${meetingId}&limit=50`);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch messages');
+        throw new Error(`Failed to fetch messages: ${response.status}`);
       }
       
       const data = await response.json();
-      setMessages(data.messages || []);
+      
+      // Filter out duplicate system messages
+      const uniqueMessages = data.messages?.filter((message: Message, index: number, arr: Message[]) => {
+        if (message.messageType === 'system') {
+          // Check if this system message is a duplicate of the previous one
+          const prevMessage = arr[index - 1];
+          return !prevMessage || 
+                 prevMessage.messageType !== 'system' || 
+                 prevMessage.message !== message.message ||
+                 prevMessage.senderId !== message.senderId;
+        }
+        return true;
+      }) || [];
+      
+      setMessages(uniqueMessages);
     } catch (err) {
       console.error('Error fetching messages:', err);
       setError('Failed to load chat history');
@@ -74,12 +90,17 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
     if (!user || !meetingId) return;
 
     const newSocket = io(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000', {
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      timeout: 10000, // 10 second timeout
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     });
 
     newSocket.on('connect', () => {
       console.log('Connected to chat server');
       setIsConnected(true);
+      setError(null); // Clear any previous errors
       
       // Join the meeting room
       newSocket.emit('join_meeting', {
@@ -89,13 +110,42 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
       });
     });
 
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from chat server');
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      setError('Failed to connect to chat server');
       setIsConnected(false);
     });
 
+    newSocket.on('disconnect', (reason) => {
+      console.log('Disconnected from chat server:', reason);
+      setIsConnected(false);
+      if (reason === 'io server disconnect') {
+        // Server disconnected us, try to reconnect
+        newSocket.connect();
+      }
+    });
+
     newSocket.on('new_message', (message: Message) => {
-      setMessages(prev => [...prev, message]);
+      // Prevent duplicate system messages
+      if (message.messageType === 'system') {
+        setMessages(prev => {
+          // Check if this exact system message already exists
+          const isDuplicate = prev.some(existing => 
+            existing.messageType === 'system' && 
+            existing.message === message.message &&
+            existing.senderId === message.senderId
+          );
+          
+          if (isDuplicate) {
+            console.log('Skipping duplicate system message:', message.message);
+            return prev;
+          }
+          
+          return [...prev, message];
+        });
+      } else {
+        setMessages(prev => [...prev, message]);
+      }
     });
 
     newSocket.on('user_typing', (data: { userId: string; userName: string }) => {
@@ -111,33 +161,15 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
     });
 
     newSocket.on('user_joined', (data: { userId: string; userName: string }) => {
-      // Add system message for user joined
-      const systemMessage: Message = {
-        meetingId,
-        senderId: 'system',
-        senderName: 'System',
-        message: `${data.userName} joined the meeting`,
-        messageType: 'system',
-        timestamp: new Date(),
-        isEdited: false,
-        reactions: []
-      };
-      setMessages(prev => [...prev, systemMessage]);
+      // System messages are now handled by the socket server
+      // No need to create duplicate system messages here
+      console.log(`User ${data.userName} joined the meeting`);
     });
 
     newSocket.on('user_left', (data: { userId: string; userName: string }) => {
-      // Add system message for user left
-      const systemMessage: Message = {
-        meetingId,
-        senderId: 'system',
-        senderName: 'System',
-        message: `${data.userName} left the meeting`,
-        messageType: 'system',
-        timestamp: new Date(),
-        isEdited: false,
-        reactions: []
-      };
-      setMessages(prev => [...prev, systemMessage]);
+      // System messages are now handled by the socket server
+      // No need to create duplicate system messages here
+      console.log(`User ${data.userName} left the meeting`);
     });
 
     newSocket.on('error', (data: { message: string }) => {

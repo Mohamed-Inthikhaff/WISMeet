@@ -13,6 +13,8 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, LayoutList, X, ChevronLeft, Video, VideoOff, Mic, MicOff, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useUser } from '@clerk/nextjs';
+import io from 'socket.io-client';
 
 import {
   DropdownMenu,
@@ -33,10 +35,12 @@ const MeetingRoom = () => {
   const searchParams = useSearchParams();
   const isPersonalRoom = !!searchParams.get('personal');
   const router = useRouter();
+  const { user } = useUser();
   const [layout, setLayout] = useState<CallLayoutType>('speaker-left');
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [devicesInitialized, setDevicesInitialized] = useState(false);
+  const [socket, setSocket] = useState<any>(null);
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const callingState = useCallCallingState();
   const localParticipant = useLocalParticipant();
@@ -57,6 +61,93 @@ const MeetingRoom = () => {
   // Get participants from call state
   const participants = call?.state.participants || [];
 
+  // Get accurate participant count including local participant
+  const participantCount = participants.length + (localParticipant ? 1 : 0);
+
+  // Debug logging for participant status (reduced frequency)
+  useEffect(() => {
+    // Only log when participant count actually changes
+    const currentCount = participantCount;
+    
+    console.log('MeetingRoom: Participant status update', {
+      participantCount: currentCount,
+      participants: participants.map(p => ({ id: p.userId, name: p.userName })),
+      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.userName } : null
+    });
+  }, [participantCount]); // Only depend on participantCount, not individual participants
+
+  // Initialize socket connection for participant sync
+  useEffect(() => {
+    if (!user || !call?.id) return;
+
+    const newSocket = io(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000', {
+      transports: ['websocket', 'polling']
+    });
+
+    newSocket.on('connect', () => {
+      console.log('MeetingRoom: Connected to socket server');
+      
+      // Join the meeting room for participant sync
+      newSocket.emit('join_meeting', {
+        meetingId: call.id,
+        userId: user.id,
+        userName: user.fullName || user.emailAddresses[0].emailAddress
+      });
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('MeetingRoom: Disconnected from socket server');
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [user, call?.id]);
+
+  // Sync participant status changes with socket system
+  useEffect(() => {
+    if (!socket || !call) return;
+
+    const handleParticipantJoined = (participant: any) => {
+      console.log('Participant joined via Stream:', participant.userId);
+      try {
+        // Notify socket system about participant join
+        socket.emit('participant_status_update', {
+          meetingId: call.id,
+          userId: participant.userId,
+          status: 'joined',
+          userName: participant.userName || participant.userId
+        });
+      } catch (error) {
+        console.error('Error syncing participant join:', error);
+      }
+    };
+
+    const handleParticipantLeft = (participant: any) => {
+      console.log('Participant left via Stream:', participant.userId);
+      try {
+        // Notify socket system about participant leave
+        socket.emit('participant_status_update', {
+          meetingId: call.id,
+          userId: participant.userId,
+          status: 'left'
+        });
+      } catch (error) {
+        console.error('Error syncing participant leave:', error);
+      }
+    };
+
+    // Listen for participant changes
+    call.on('participant.joined', handleParticipantJoined);
+    call.on('participant.left', handleParticipantLeft);
+
+    return () => {
+      call.off('participant.joined', handleParticipantJoined);
+      call.off('participant.left', handleParticipantLeft);
+    };
+  }, [socket, call]);
 
 
   // Initialize devices based on setup preferences - only once
@@ -242,7 +333,7 @@ const MeetingRoom = () => {
             >
               <div className="flex h-full flex-col">
                 <div className="flex items-center justify-between border-b border-gray-800 p-4">
-                  <h2 className="text-lg font-semibold text-white">Participants ({participants.length})</h2>
+                  <h2 className="text-lg font-semibold text-white">Participants ({participantCount})</h2>
                   <button
                     onClick={() => setShowParticipants(false)}
                     className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"
@@ -326,7 +417,7 @@ const MeetingRoom = () => {
           )}
         >
           <Users className="h-5 w-5" />
-          <span className="hidden text-sm md:inline">Participants ({participants.length})</span>
+          <span className="hidden text-sm md:inline">Participants ({participantCount})</span>
         </button>
 
         <button
