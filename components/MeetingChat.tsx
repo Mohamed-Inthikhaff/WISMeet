@@ -110,13 +110,13 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
       });
     });
 
-    newSocket.on('connect_error', (error) => {
+    newSocket.on('connect_error', (error: Error) => {
       console.error('Socket connection error:', error);
       setError('Failed to connect to chat server');
       setIsConnected(false);
     });
 
-    newSocket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', (reason: string) => {
       console.log('Disconnected from chat server:', reason);
       setIsConnected(false);
       if (reason === 'io server disconnect') {
