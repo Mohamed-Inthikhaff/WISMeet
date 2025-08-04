@@ -71,8 +71,8 @@ const MeetingRoom = () => {
     
     console.log('MeetingRoom: Participant status update', {
       participantCount: currentCount,
-      participants: participants.map(p => ({ id: p.userId, name: p.userName })),
-      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.userName } : null
+      participants: participants.map(p => ({ id: p.userId, name: p.name })),
+      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.name } : null
     });
   }, [participantCount]); // Only depend on participantCount, not individual participants
 
@@ -118,7 +118,7 @@ const MeetingRoom = () => {
           meetingId: call.id,
           userId: participant.userId,
           status: 'joined',
-          userName: participant.userName || participant.userId
+          userName: participant.name || participant.userId
         });
       } catch (error) {
         console.error('Error syncing participant join:', error);
@@ -140,12 +140,12 @@ const MeetingRoom = () => {
     };
 
     // Listen for participant changes
-    call.on('participant.joined', handleParticipantJoined);
-    call.on('participant.left', handleParticipantLeft);
+    call.on('participantJoined', handleParticipantJoined);
+    call.on('participantLeft', handleParticipantLeft);
 
     return () => {
-      call.off('participant.joined', handleParticipantJoined);
-      call.off('participant.left', handleParticipantLeft);
+      call.off('participantJoined', handleParticipantJoined);
+      call.off('participantLeft', handleParticipantLeft);
     };
   }, [socket, call]);
 
