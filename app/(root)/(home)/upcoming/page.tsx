@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useGetCalls } from '@/hooks/useGetCalls';
+import { useGetScheduledMeetings } from '@/hooks/useGetScheduledMeetings';
 import { useUser } from '@clerk/nextjs';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -19,7 +19,7 @@ const LoadingSpinner = () => (
 );
 
 const UpcomingMeetings = () => {
-  const { upcomingCalls, isLoading } = useGetCalls();
+  const { scheduledMeetings, isLoading } = useGetScheduledMeetings();
   const { user } = useUser();
 
   return (
@@ -51,7 +51,7 @@ const UpcomingMeetings = () => {
           <div className="flex justify-center py-8">
             <LoadingSpinner />
           </div>
-        ) : upcomingCalls.length === 0 ? (
+        ) : scheduledMeetings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <div className="bg-gray-800/50 rounded-full p-4 mb-4">
               <Image
@@ -74,9 +74,9 @@ const UpcomingMeetings = () => {
             </Link>
           </div>
         ) : (
-          upcomingCalls.map((meeting, index) => (
+          scheduledMeetings.map((meeting, index) => (
             <motion.div
-              key={meeting.id}
+              key={meeting._id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
@@ -86,7 +86,7 @@ const UpcomingMeetings = () => {
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-xl font-semibold text-white mb-2">
-                      {meeting.state.custom?.description || 'Scheduled Meeting'}
+                      {meeting.title || 'Scheduled Meeting'}
                     </h3>
                     <div className="flex flex-wrap gap-4">
                       <div className="flex items-center gap-2 text-gray-400">
@@ -95,9 +95,7 @@ const UpcomingMeetings = () => {
                             d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" 
                           />
                         </svg>
-                        {meeting.state.startsAt && (
-                          <span>{format(new Date(meeting.state.startsAt), 'EEEE, MMMM d, yyyy')}</span>
-                        )}
+                        <span>{format(new Date(meeting.startTime), 'EEEE, MMMM d, yyyy')}</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-400">
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -105,9 +103,7 @@ const UpcomingMeetings = () => {
                             d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" 
                           />
                         </svg>
-                        {meeting.state.startsAt && (
-                          <span>{format(new Date(meeting.state.startsAt), 'h:mm a')}</span>
-                        )}
+                        <span>{format(new Date(meeting.startTime), 'h:mm a')}</span>
                       </div>
                     </div>
                   </div>
@@ -126,17 +122,17 @@ const UpcomingMeetings = () => {
                       ))}
                     </div>
                     <span className="text-sm text-gray-400">
-                      {meeting.state.members?.length || 0} Participants
+                      {meeting.participants?.length || 0} Participants
                     </span>
                     <span className="text-sm text-gray-400">
-                      • Hosted by {meeting.state.createdBy?.id === user?.id ? 'You' : 'Other'}
+                      • Hosted by {meeting.hostId === user?.id ? 'You' : 'Other'}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-3">
                   <Link 
-                    href={`/meeting/${meeting.id}`}
+                    href={`/meeting/${meeting.meetingId}`}
                     className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -148,7 +144,7 @@ const UpcomingMeetings = () => {
                   </Link>
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(getMeetingLink(meeting.id));
+                      navigator.clipboard.writeText(getMeetingLink(meeting.meetingId));
                       // You might want to add a toast notification here
                     }}
                     className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700/70 text-gray-300 rounded-lg transition-colors"
