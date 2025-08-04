@@ -1,6 +1,26 @@
 // Load environment variables from .env.local
 require('dotenv').config({ path: '.env.local' });
 
+// Fallback to .env if .env.local doesn't exist
+if (!process.env.NEXT_PUBLIC_STREAM_API_KEY) {
+  require('dotenv').config({ path: '.env' });
+}
+
+// Validate required environment variables
+const requiredEnvVars = [
+  'NEXT_PUBLIC_STREAM_API_KEY',
+  'STREAM_SECRET_KEY',
+  'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',
+  'CLERK_SECRET_KEY'
+];
+
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.error('Missing required environment variables:', missingVars);
+  console.error('Please check your .env.local or .env file');
+  process.exit(1);
+}
+
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
