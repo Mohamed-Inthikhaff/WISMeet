@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
+      console.error('Chat messages API: Unauthorized access attempt');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -18,8 +19,11 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
 
     if (!meetingId) {
+      console.error('Chat messages API: Missing meetingId parameter');
       return NextResponse.json({ error: 'Meeting ID is required' }, { status: 400 });
     }
+
+    console.log(`Chat messages API: Fetching messages for meeting ${meetingId}, user ${userId}`);
 
     const db = await getDb();
     const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
@@ -28,10 +32,12 @@ export async function GET(request: NextRequest) {
     // Verify user has access to this meeting
     const meeting = await meetingsCollection.findOne({ meetingId });
     if (!meeting) {
+      console.error(`Chat messages API: Meeting ${meetingId} not found`);
       return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
     }
 
     if (meeting.hostId !== userId && !meeting.participants.includes(userId)) {
+      console.error(`Chat messages API: User ${userId} denied access to meeting ${meetingId}`);
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
@@ -46,6 +52,7 @@ export async function GET(request: NextRequest) {
 
     // Get total count for pagination
     const totalCount = await messagesCollection.countDocuments(query);
+    console.log(`Chat messages API: Found ${totalCount} messages for meeting ${meetingId}`);
 
     // Get messages with pagination
     const messages = await messagesCollection
@@ -58,6 +65,8 @@ export async function GET(request: NextRequest) {
     // Check if there are more messages
     const hasMore = skip + messages.length < totalCount;
     const totalPages = Math.ceil(totalCount / limit);
+
+    console.log(`Chat messages API: Returning ${messages.length} messages for meeting ${meetingId}`);
 
     return NextResponse.json({
       messages: messages.reverse(), // Return in chronological order
@@ -74,7 +83,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error fetching messages:', error);
+    console.error('Chat messages API: Error fetching messages:', error);
     return NextResponse.json(
       { error: 'Failed to fetch messages' },
       { status: 500 }

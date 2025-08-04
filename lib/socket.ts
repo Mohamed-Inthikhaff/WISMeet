@@ -15,6 +15,7 @@ class ChatSocketManager {
   private connectedUsers = new Map<string, ConnectedUser>(); // socketId -> user info
   private meetingUsers = new Map<string, Set<string>>(); // meetingId -> Set of socketIds
   private typingUsers = new Map<string, Map<string, { userId: string; userName: string; timer: NodeJS.Timeout }>>(); // meetingId -> Map of typing users
+  private recentStatusUpdates = new Map<string, { userId: string; timestamp: number }>(); // meetingId -> recent updates
 
   init(server: NetServer) {
     this.io = new SocketIOServer(server, {
@@ -40,6 +41,16 @@ class ChatSocketManager {
       socket.on('join_meeting', async (data: { meetingId: string; userId: string; userName: string }) => {
         const { meetingId, userId, userName } = data;
         
+        // Check if user is already in this meeting
+        const existingUser = Array.from(this.connectedUsers.values()).find(
+          user => user.userId === userId && user.meetingId === meetingId
+        );
+        
+        if (existingUser) {
+          console.log(`User ${userName} (${userId}) already in meeting ${meetingId}, skipping duplicate join`);
+          return;
+        }
+        
         // Store user info
         this.connectedUsers.set(socket.id, {
           userId,
@@ -60,10 +71,58 @@ class ChatSocketManager {
         // Create or update chat session
         await this.createChatSession(meetingId, userId);
 
-        // Notify others in the meeting
+        // Clean up any existing duplicate system messages
+        await this.cleanupDuplicateSystemMessages(meetingId);
+
+        // Only notify others in the meeting (not the joining user)
         socket.to(meetingId).emit('user_joined', { userId, userName });
 
         console.log(`User ${userName} (${userId}) joined meeting ${meetingId}`);
+      });
+
+      // Handle participant status updates from Stream SDK
+      socket.on('participant_status_update', (data: {
+        meetingId: string;
+        userId: string;
+        status: 'joined' | 'left';
+        userName?: string;
+      }) => {
+        const { meetingId, userId, status, userName } = data;
+        
+        // Prevent duplicate status updates within 10 seconds
+        const updateKey = `${meetingId}:${userId}:${status}`;
+        const now = Date.now();
+        const recentUpdate = this.recentStatusUpdates.get(updateKey);
+        
+        if (recentUpdate && (now - recentUpdate.timestamp) < 10000) {
+          console.log(`Skipping duplicate status update for ${userId} in ${meetingId} (${status})`);
+          return;
+        }
+        
+        // Check if this user is already in the meeting for join events
+        if (status === 'joined') {
+          const existingUser = Array.from(this.connectedUsers.values()).find(
+            user => user.userId === userId && user.meetingId === meetingId
+          );
+          
+          if (existingUser) {
+            console.log(`User ${userName || userId} already in meeting ${meetingId}, skipping join notification`);
+            return;
+          }
+        }
+        
+        // Store this update
+        this.recentStatusUpdates.set(updateKey, { userId, timestamp: now });
+        
+        if (status === 'joined') {
+          // Add system message for participant joined
+          this.broadcastSystemMessage(meetingId, `${userName || userId} joined the meeting`);
+          console.log(`Participant ${userName || userId} joined meeting ${meetingId}`);
+        } else if (status === 'left') {
+          // Add system message for participant left
+          this.broadcastSystemMessage(meetingId, `${userName || userId} left the meeting`);
+          console.log(`Participant ${userName || userId} left meeting ${meetingId}`);
+        }
       });
 
       // Send message
@@ -254,6 +313,50 @@ class ChatSocketManager {
     }
   }
 
+  // Broadcast system message to all users in a meeting
+  private async broadcastSystemMessage(meetingId: string, message: string) {
+    try {
+      const db = await getDb();
+      const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
+
+      // Check if this exact system message already exists in the last 30 seconds
+      const thirtySecondsAgo = new Date(Date.now() - 30000);
+      const existingMessage = await messagesCollection.findOne({
+        meetingId,
+        messageType: 'system',
+        message,
+        senderId: 'system',
+        timestamp: { $gte: thirtySecondsAgo }
+      });
+
+      if (existingMessage) {
+        console.log(`System message already exists, skipping: ${message}`);
+        return;
+      }
+
+      // Create system message
+      const systemMessage = {
+        meetingId,
+        senderId: 'system',
+        senderName: 'System',
+        message,
+        messageType: 'system',
+        timestamp: new Date(),
+        isEdited: false,
+        reactions: []
+      };
+
+      // Save to database
+      const result = await messagesCollection.insertOne(systemMessage);
+      const savedMessage = { ...systemMessage, _id: result.insertedId };
+
+      // Broadcast to all users in the meeting
+      this.io!.to(meetingId).emit('new_message', savedMessage);
+    } catch (error) {
+      console.error('Error broadcasting system message:', error);
+    }
+  }
+
   // Public method to get connected users for a meeting
   getConnectedUsers(meetingId: string): ConnectedUser[] {
     const socketIds = this.meetingUsers.get(meetingId);
@@ -262,6 +365,43 @@ class ChatSocketManager {
     return Array.from(socketIds)
       .map(socketId => this.connectedUsers.get(socketId))
       .filter(Boolean) as ConnectedUser[];
+  }
+
+  // Clean up duplicate system messages for a meeting
+  async cleanupDuplicateSystemMessages(meetingId: string) {
+    try {
+      const db = await getDb();
+      const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
+
+      // Find all system messages for this meeting
+      const systemMessages = await messagesCollection.find({
+        meetingId,
+        messageType: 'system'
+      }).sort({ timestamp: 1 }).toArray();
+
+      // Group by message content and keep only the first occurrence
+      const seenMessages = new Set();
+      const duplicatesToRemove = [];
+
+      for (const message of systemMessages) {
+        const messageKey = `${message.message}:${message.senderId}`;
+        if (seenMessages.has(messageKey)) {
+          duplicatesToRemove.push(message._id);
+        } else {
+          seenMessages.add(messageKey);
+        }
+      }
+
+      // Remove duplicates
+      if (duplicatesToRemove.length > 0) {
+        await messagesCollection.deleteMany({
+          _id: { $in: duplicatesToRemove }
+        });
+        console.log(`Cleaned up ${duplicatesToRemove.length} duplicate system messages for meeting ${meetingId}`);
+      }
+    } catch (error) {
+      console.error('Error cleaning up duplicate system messages:', error);
+    }
   }
 }
 
