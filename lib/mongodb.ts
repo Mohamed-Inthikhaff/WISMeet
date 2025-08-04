@@ -42,6 +42,11 @@ export const COLLECTIONS = {
 
 // Database connection and utility functions
 export const getDb = async () => {
-  const client = await clientPromise;
-  return client.db();
+  try {
+    const client = await clientPromise;
+    return client.db();
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    throw new Error('Failed to connect to database');
+  }
 }; 
