@@ -57,20 +57,69 @@ const MeetingRoom = () => {
   // Get participants from call state
   const participants = call?.state.participants || [];
 
+  // Monitor microphone state for debugging
+  useEffect(() => {
+    if (call && localParticipant) {
+      const checkMicrophoneState = () => {
+        const isMicEnabled = localParticipant.isMicrophoneEnabled;
+        const micTrack = localParticipant.microphoneTrack;
+        
+        console.log('Microphone state:', {
+          isEnabled: isMicEnabled,
+          hasTrack: !!micTrack,
+          trackEnabled: micTrack?.enabled,
+          trackReadyState: micTrack?.readyState,
+          trackId: micTrack?.id
+        });
+      };
+      
+      // Check immediately
+      checkMicrophoneState();
+      
+      // Set up interval to monitor
+      const interval = setInterval(checkMicrophoneState, 5000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [call, localParticipant]);
+
   // Initialize devices based on setup preferences - only once
   const initializeDevices = useCallback(() => {
     if (call && !devicesInitialized) {
       const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
       const initialMicEnabled = call.state.custom?.initialMicEnabled;
 
+      console.log('Initializing devices with settings:', {
+        initialCameraEnabled,
+        initialMicEnabled
+      });
+
       // Use a delay to ensure call is fully initialized
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (call) {
-          if (initialCameraEnabled === false) {
-            call.camera.disable();
-          }
-          if (initialMicEnabled === false) {
-            call.microphone.disable();
+          try {
+            // Initialize microphone first
+            if (initialMicEnabled === false) {
+              await call.microphone.disable();
+              console.log('Microphone disabled on join');
+            } else {
+              await call.microphone.enable();
+              console.log('Microphone enabled on join');
+              
+              // Verify microphone is actually enabled
+              setTimeout(() => {
+                const isEnabled = localParticipant?.isMicrophoneEnabled;
+                console.log('Microphone verification:', { isEnabled });
+              }, 1000);
+            }
+            
+            // Initialize camera
+            if (initialCameraEnabled === false) {
+              await call.camera.disable();
+              console.log('Camera disabled on join');
+            }
+          } catch (err) {
+            console.error('Error initializing devices in meeting room:', err);
           }
         }
         setDevicesInitialized(true);
@@ -78,7 +127,7 @@ const MeetingRoom = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [call, devicesInitialized]);
+  }, [call, devicesInitialized, localParticipant]);
 
   useEffect(() => {
     const cleanup = initializeDevices();

@@ -195,32 +195,12 @@ const MeetingSetup = ({
     try {
       // Only initialize microphone initially - let camera be requested on first user interaction
       if (isMicEnabled) {
-        // Enable microphone with noise cancellation
+        // Enable microphone with Stream's built-in audio handling
         await call.microphone.enable();
-        
-        // Apply noise cancellation to the audio stream
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: noiseCancellationEnabled,
-              noiseSuppression: noiseCancellationEnabled,
-              autoGainControl: noiseCancellationEnabled,
-              sampleRate: 48000,
-              channelCount: 1,
-            },
-            video: false
-          });
-          
-          // Apply the processed audio stream to the call
-          const audioTrack = stream.getAudioTracks()[0];
-          if (audioTrack) {
-            console.log('Noise cancellation enabled for microphone');
-          }
-        } catch (audioErr) {
-          console.log('Audio processing not supported, using default settings');
-        }
+        console.log('Microphone enabled successfully');
       } else {
         await call.microphone.disable();
+        console.log('Microphone disabled');
       }
       
       // Don't auto-start camera - wait for user interaction
@@ -231,7 +211,7 @@ const MeetingSetup = ({
       console.error('Error initializing devices:', err);
       setError('Failed to initialize devices. Please check permissions.');
     }
-  }, [isMicEnabled, call.microphone, noiseCancellationEnabled, isCameraEnabled, stopCameraStream]);
+  }, [isMicEnabled, call.microphone, isCameraEnabled, stopCameraStream]);
 
   useEffect(() => {
     initializeDevices();
@@ -448,7 +428,41 @@ const MeetingSetup = ({
     };
   }, []);
 
-  // Handle microphone toggle with noise cancellation
+  // Test microphone function
+  const testMicrophone = async () => {
+    try {
+      console.log('Testing microphone...');
+      
+      // Get microphone permissions
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false 
+      });
+      
+      console.log('Microphone test successful:', {
+        trackCount: stream.getTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+        trackEnabled: stream.getAudioTracks()[0]?.enabled
+      });
+      
+      // Stop the test stream
+      stream.getTracks().forEach(track => track.stop());
+      
+      setLastAction('Microphone test successful');
+      setShowFeedback(true);
+      setTimeout(() => setShowFeedback(false), 2000);
+      
+    } catch (err) {
+      console.error('Microphone test failed:', err);
+      setError('Microphone test failed. Please check permissions.');
+    }
+  };
+
+  // Handle microphone toggle with simplified audio handling
   const toggleMicrophone = async () => {
     try {
       if (isMicEnabled) {
@@ -459,32 +473,35 @@ const MeetingSetup = ({
         setShowFeedback(true);
         setTimeout(() => setShowFeedback(false), 2000);
       } else {
-        console.log('Enabling microphone with noise cancellation...');
+        console.log('Enabling microphone...');
         await call.microphone.enable();
         
-        // Apply noise cancellation when enabling microphone
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: noiseCancellationEnabled,
-              noiseSuppression: noiseCancellationEnabled,
-              autoGainControl: noiseCancellationEnabled,
-              sampleRate: 48000,
-              channelCount: 1,
-            },
-            video: false
-          });
-          
-          const audioTrack = stream.getAudioTracks()[0];
-          if (audioTrack) {
-            console.log('Noise cancellation enabled for microphone');
+        // Apply noise cancellation settings if enabled
+        if (noiseCancellationEnabled) {
+          try {
+            // Get the current audio track from the call
+            const audioTrack = call.microphone.track;
+            if (audioTrack) {
+              // Apply noise cancellation settings to the existing track
+              const constraints = {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                sampleRate: 48000,
+                channelCount: 1,
+              };
+              
+              // Apply constraints to the audio track
+              await audioTrack.applyConstraints(constraints);
+              console.log('Noise cancellation applied to microphone');
+            }
+          } catch (audioErr) {
+            console.log('Audio processing not supported, using default settings');
           }
-        } catch (audioErr) {
-          console.log('Audio processing not supported, using default settings');
         }
         
         setIsMicEnabled(true);
-        setLastAction('Microphone unmuted with noise cancellation');
+        setLastAction('Microphone unmuted');
         setShowFeedback(true);
         setTimeout(() => setShowFeedback(false), 2000);
       }
@@ -842,9 +859,12 @@ const MeetingSetup = ({
                                 <Settings className="h-4 w-4 text-gray-400" />
                                 <span>Audio Settings</span>
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="flex items-center gap-3 text-white hover:bg-gray-700">
+                              <DropdownMenuItem 
+                                onClick={testMicrophone}
+                                className="flex items-center gap-3 text-white hover:bg-gray-700"
+                              >
                                 <Volume2 className="h-4 w-4 text-gray-400" />
-                                <span>Test Audio</span>
+                                <span>Test Microphone</span>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
