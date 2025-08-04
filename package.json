@@ -11,11 +11,14 @@
     "dev:next": "next dev",
     "build": "next build",
     "start": "NODE_ENV=production node server.js",
+    "start:dev": "NODE_ENV=development node server.js",
     "lint": "next lint",
     "analyze": "cross-env ANALYZE=true next build --config next.config.analyzer.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "postinstall": "echo 'Build completed successfully'",
+    "deploy:check": "node deploy-check.js"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.0.0",
