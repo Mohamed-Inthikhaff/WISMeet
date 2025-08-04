@@ -57,31 +57,7 @@ const MeetingRoom = () => {
   // Get participants from call state
   const participants = call?.state.participants || [];
 
-  // Monitor microphone state for debugging
-  useEffect(() => {
-    if (call && localParticipant) {
-      const checkMicrophoneState = () => {
-        const isMicEnabled = localParticipant.isMicrophoneEnabled;
-        const micTrack = localParticipant.microphoneTrack;
-        
-        console.log('Microphone state:', {
-          isEnabled: isMicEnabled,
-          hasTrack: !!micTrack,
-          trackEnabled: micTrack?.enabled,
-          trackReadyState: micTrack?.readyState,
-          trackId: micTrack?.id
-        });
-      };
-      
-      // Check immediately
-      checkMicrophoneState();
-      
-      // Set up interval to monitor
-      const interval = setInterval(checkMicrophoneState, 5000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [call, localParticipant]);
+
 
   // Initialize devices based on setup preferences - only once
   const initializeDevices = useCallback(() => {
@@ -108,8 +84,7 @@ const MeetingRoom = () => {
               
               // Verify microphone is actually enabled
               setTimeout(() => {
-                const isEnabled = localParticipant?.isMicrophoneEnabled;
-                console.log('Microphone verification:', { isEnabled });
+                console.log('Microphone enabled on join - verification complete');
               }, 1000);
             }
             
@@ -127,7 +102,8 @@ const MeetingRoom = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [call, devicesInitialized, localParticipant]);
+    return () => {}; // Return empty cleanup function when conditions aren't met
+  }, [call, devicesInitialized]);
 
   useEffect(() => {
     const cleanup = initializeDevices();

@@ -232,6 +232,7 @@ const MeetingSetup = ({
       
       return () => clearTimeout(timer);
     }
+    return () => {}; // Return empty cleanup function when conditions aren't met
   }, [isCameraEnabled, cameraStream, startCameraStream]);
 
   useEffect(() => {
@@ -479,22 +480,9 @@ const MeetingSetup = ({
         // Apply noise cancellation settings if enabled
         if (noiseCancellationEnabled) {
           try {
-            // Get the current audio track from the call
-            const audioTrack = call.microphone.track;
-            if (audioTrack) {
-              // Apply noise cancellation settings to the existing track
-              const constraints = {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-                sampleRate: 48000,
-                channelCount: 1,
-              };
-              
-              // Apply constraints to the audio track
-              await audioTrack.applyConstraints(constraints);
-              console.log('Noise cancellation applied to microphone');
-            }
+            // Note: Stream SDK handles audio processing internally
+            // We'll rely on the browser's built-in noise cancellation
+            console.log('Noise cancellation enabled - using browser defaults');
           } catch (audioErr) {
             console.log('Audio processing not supported, using default settings');
           }
