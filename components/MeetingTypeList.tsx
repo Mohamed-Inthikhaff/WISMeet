@@ -63,10 +63,18 @@ const MeetingTypeList = () => {
         userId: user.id
       });
 
-      // Create the call
-      const call = await client.call('default', meetingData?.title || 'Instant Meeting');
+      // Create the call with a unique ID
+      const callId = meetingData?.title || `instant-${Date.now()}`;
+      console.log('createMeeting: Creating call with ID:', callId);
+      const call = await client.call('default', callId);
+      
+      // Ensure the call is properly initialized
+      await call.getOrCreate();
 
       console.log('createMeeting: Meeting created successfully, call ID:', call.id);
+      console.log('createMeeting: Call object:', call);
+      console.log('createMeeting: Call type:', call.type);
+      console.log('createMeeting: Call state:', call.state);
 
       // Save scheduled meeting to our database if it's a scheduled meeting
       if (meetingData && meetingData.date && meetingData.time) {
@@ -167,6 +175,7 @@ const MeetingTypeList = () => {
       
       if (meetingState === 'isInstantMeeting') {
         console.log('createMeeting: Redirecting to meeting room...');
+        console.log('createMeeting: Redirect URL:', `/meeting/${call.id}`);
         router.push(`/meeting/${call.id}`);
       } else {
         // For scheduled meetings, show success message and close modal
