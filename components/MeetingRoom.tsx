@@ -25,6 +25,7 @@ import {
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
+import AudioTroubleshooter from './AudioTroubleshooter';
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
@@ -134,6 +135,33 @@ const MeetingRoom = () => {
           userId: participant.userId,
           status: 'left'
         });
+
+        // Check if meeting should end (only local participant remaining)
+        const remainingParticipants = call.state.participants.filter(p => p.userId !== participant.userId);
+        if (remainingParticipants.length === 0 && localParticipant) {
+          console.log('🤖 All participants left, triggering automatic summary...');
+          
+          // Trigger automatic summary generation
+          fetch('/api/mortgage-assistant/auto-summary', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              meetingId: call.id,
+              startTime: call.state.createdAt,
+              endTime: new Date().toISOString()
+            })
+          }).then(response => {
+            if (response.ok) {
+              console.log('✅ Automatic summary generated when meeting ended');
+            } else {
+              console.warn('⚠️ Automatic summary generation failed');
+            }
+          }).catch(error => {
+            console.error('❌ Error generating automatic summary:', error);
+          });
+        }
       } catch (error) {
         console.error('Error syncing participant leave:', error);
       }
@@ -147,7 +175,7 @@ const MeetingRoom = () => {
       call.off('participantJoined', handleParticipantJoined);
       call.off('participantLeft', handleParticipantLeft);
     };
-  }, [socket, call]);
+  }, [socket, call, localParticipant]);
 
 
   // Initialize devices based on setup preferences - only once
@@ -434,6 +462,7 @@ const MeetingRoom = () => {
         </button>
 
         {!isPersonalRoom && <EndCallButton />}
+        <AudioTroubleshooter />
       </motion.div>
     </div>
   );
