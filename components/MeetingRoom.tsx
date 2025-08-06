@@ -26,9 +26,11 @@ import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
 import AudioTroubleshooter from './AudioTroubleshooter';
+import AudioMonitor from './AudioMonitor';
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
+import { audioMonitor, AudioHealthStatus } from '@/lib/audio-monitor';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
 
@@ -178,83 +180,180 @@ const MeetingRoom = () => {
   }, [socket, call, localParticipant]);
 
 
-  // Initialize devices based on setup preferences - only once
-  const initializeDevices = useCallback(() => {
-    if (call && !devicesInitialized) {
-      const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
-      const initialMicEnabled = call.state.custom?.initialMicEnabled;
+  // Enhanced microphone initialization with better error handling
+  const initializeDevices = async () => {
+    if (!call || !localParticipant) return;
 
-      console.log('Initializing devices with settings:', {
-        initialCameraEnabled,
-        initialMicEnabled
+    const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
+    const initialMicEnabled = call.state.custom?.initialMicEnabled;
+
+    console.log('🎤 Initializing devices with settings:', {
+      initialCameraEnabled,
+      initialMicEnabled
+    });
+
+    try {
+      // First, check if we can access the microphone at all
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1,
+        },
+        video: false
       });
 
-      // Use a delay to ensure call is fully initialized
-      const timer = setTimeout(async () => {
-        if (call) {
-          try {
-            // Initialize microphone first with proper error handling
-            if (initialMicEnabled === false) {
-              await call.microphone.disable();
-              console.log('Microphone disabled on join');
-            } else {
-              // Test microphone access before enabling
-              try {
-                const audioStream = await navigator.mediaDevices.getUserMedia({ 
-                  audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                  },
-                  video: false 
-                });
-                
-                // Verify audio track is available
-                const audioTracks = audioStream.getAudioTracks();
-                if (audioTracks.length > 0) {
-                  console.log('Microphone access verified, enabling with Stream SDK');
-                  await call.microphone.enable();
-                  console.log('Microphone enabled on join');
-                  
-                  // Verify microphone is actually enabled
-                  setTimeout(() => {
-                    console.log('Microphone enabled on join - verification complete');
-                  }, 1000);
-                } else {
-                  console.warn('No audio tracks available, microphone may not work');
-                  await call.microphone.enable(); // Still try to enable
-                }
-                
-                // Stop the test stream
-                audioStream.getTracks().forEach(track => track.stop());
-                
-              } catch (audioErr) {
-                console.error('Failed to access microphone on join:', audioErr);
-                // Don't fail the join, but log the issue
-              }
-            }
-            
-            // Initialize camera
-            if (initialCameraEnabled === false) {
-              await call.camera.disable();
-              console.log('Camera disabled on join');
-            }
-          } catch (err) {
-            console.error('Error initializing devices in meeting room:', err);
-          }
-        }
-        setDevicesInitialized(true);
-      }, 100);
+      // Check if we got audio tracks
+      const audioTracks = testStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        throw new Error('No audio tracks available');
+      }
 
-      return () => clearTimeout(timer);
+      // Clean up test stream
+      testStream.getTracks().forEach(track => track.stop());
+
+      // Now enable microphone with Stream SDK
+      await call.microphone.enable();
+      console.log('✅ Microphone enabled successfully');
+
+      // Enable camera if needed
+      if (initialCameraEnabled) {
+        await call.camera.enable();
+        console.log('✅ Camera enabled successfully');
+      }
+
+    } catch (error) {
+      console.error('❌ Device initialization failed:', error);
+      
+      // Show user-friendly error message
+      setAudioError(
+        error instanceof Error && error.message.includes('permission') 
+          ? 'Microphone access denied. Please allow microphone permissions and refresh the page.'
+          : 'Failed to initialize microphone. Please check your device settings and try again.'
+      );
     }
-    return () => {}; // Return empty cleanup function when conditions aren't met
-  }, [call, devicesInitialized]);
+  };
 
   useEffect(() => {
-    const cleanup = initializeDevices();
-    return cleanup;
-  }, [initializeDevices]);
+    if (call && localParticipant && !devicesInitialized) {
+      // Add a small delay to ensure everything is ready
+      const timer = setTimeout(() => {
+        initializeDevices();
+        setDevicesInitialized(true);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [call, localParticipant, devicesInitialized]);
+
+  // Enhanced audio monitoring and recovery mechanism
+  useEffect(() => {
+    if (!call || !localParticipant) return;
+
+    let audioCheckInterval: NodeJS.Timeout;
+    let failCount = 0;
+    const maxFails = 3;
+
+    const checkAudioHealth = async () => {
+      try {
+        // Test if we can access microphone
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { 
+            echoCancellation: true, 
+            noiseSuppression: true, 
+            autoGainControl: true 
+          },
+          video: false 
+        });
+        
+        const audioTracks = stream.getAudioTracks();
+        
+        // Clean up test stream
+        stream.getTracks().forEach(track => track.stop());
+        
+        if (audioTracks.length === 0) {
+          console.warn('🎤 Audio track lost');
+          failCount++;
+          
+          if (failCount >= maxFails) {
+            console.error('❌ Audio access failed after multiple attempts');
+            setAudioError('Microphone not working. Please check your device and try refreshing the page.');
+            setAudioStatus('error');
+          } else {
+            setAudioStatus('warning');
+          }
+        } else {
+          // Audio is working, reset fail count
+          failCount = 0;
+          setAudioError(null);
+          setAudioStatus('good');
+        }
+      } catch (error) {
+        console.warn('🎤 Audio health check failed:', error);
+        failCount++;
+        
+        if (failCount >= maxFails) {
+          setAudioError('Cannot access microphone. Please check browser permissions and device settings.');
+          setAudioStatus('error');
+        } else {
+          setAudioStatus('warning');
+        }
+      }
+    };
+
+    // Check audio health every 30 seconds (less frequent)
+    audioCheckInterval = setInterval(checkAudioHealth, 30000);
+
+    return () => {
+      if (audioCheckInterval) {
+        clearInterval(audioCheckInterval);
+      }
+    };
+  }, [call, localParticipant]);
+
+  // Audio health check and recovery
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [audioStatus, setAudioStatus] = useState<'good' | 'warning' | 'error'>('good');
+
+  useEffect(() => {
+    if (!call) return;
+    let failCount = 0;
+    let stopped = false;
+
+    const checkAudio = async () => {
+      if (stopped) return;
+      try {
+        // Try to get a new audio stream
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false
+        });
+        stream.getTracks().forEach(track => track.stop());
+        failCount = 0;
+        setAudioError(null);
+      } catch (err) {
+        failCount++;
+        // Try to recover by toggling mic
+        try {
+          await call.microphone.disable();
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await call.microphone.enable();
+        } catch (sdkErr) {
+          // Ignore SDK errors
+        }
+        if (failCount >= 3) {
+          setAudioError('Microphone/audio lost. Please check your device or leave and rejoin the meeting.');
+        }
+      }
+    };
+    const interval = setInterval(checkAudio, 15000);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [call]);
 
 
   if (callingState !== CallingState.JOINED) {
@@ -463,7 +562,13 @@ const MeetingRoom = () => {
 
         {!isPersonalRoom && <EndCallButton />}
         <AudioTroubleshooter />
+        <AudioMonitor />
       </motion.div>
+      {audioError && (
+        <div className="fixed bottom-20 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg">
+          <strong>Audio Error:</strong> {audioError}
+        </div>
+      )}
     </div>
   );
 };
