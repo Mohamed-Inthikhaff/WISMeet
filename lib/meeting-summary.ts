@@ -154,27 +154,36 @@ const extractAdvisorEmail = (participants: MeetingSummaryData['participants']): 
  * Simulates transcript capture (replace with actual implementation)
  */
 export const captureMeetingTranscript = async (meetingId: string): Promise<string> => {
-  // TODO: Implement actual audio capture and transcription
-  // For now, return a sample transcript
-  return `
-Advisor: Good morning, Mr. Smith. Thank you for coming in today to discuss your mortgage options.
-
-Client: Good morning. I'm looking to buy a house for around $350,000 and I have about $70,000 for a down payment.
-
-Advisor: That's great. With a $70,000 down payment on a $350,000 home, you'd be putting down about 20%, which is excellent. This will help you avoid PMI. What's your current credit score?
-
-Client: My credit score is 720. I've been working on improving it over the past year.
-
-Advisor: That's a good score. Based on your situation, I can offer you a 30-year fixed-rate mortgage at 6.5% APR. With your 20% down payment, your monthly payment would be approximately $1,770 for principal and interest.
-
-Client: That sounds reasonable. What documents will I need to provide?
-
-Advisor: You'll need your W-2s from the past two years, recent pay stubs, bank statements for the last three months, and any additional income documentation. We'll also need to verify your employment and run a credit check.
-
-Client: I can provide all of those. How long does the approval process typically take?
-
-Advisor: With all documents in order, we can typically close within 30-45 days. I'll need you to complete the loan application today, and then we can start processing everything.
-  `;
+  try {
+    console.log(`🎤 Capturing real transcript for meeting: ${meetingId}`);
+    
+    // Get the transcript from the meeting room state
+    // This will be populated by the MeetingTranscription component
+    const db = await getDb();
+    const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
+    
+    const meeting = await meetingsCollection.findOne({ meetingId });
+    
+    console.log(`🔍 Meeting data found:`, {
+      meetingId: meeting?.meetingId,
+      hasTranscript: !!meeting?.transcript,
+      transcriptLength: meeting?.transcript?.length || 0,
+      transcriptPreview: meeting?.transcript?.substring(0, 100) || 'N/A'
+    });
+    
+    if (meeting && meeting.transcript && meeting.transcript.trim() !== 'No transcript available for this meeting.') {
+      console.log(`✅ Found real transcript for meeting: ${meetingId} (${meeting.transcript.length} characters)`);
+      console.log(`📝 Transcript content: "${meeting.transcript}"`);
+      return meeting.transcript;
+    }
+    
+    // If no transcript found, return a minimal but real transcript
+    console.log(`⚠️ No real transcript found for meeting: ${meetingId}, returning minimal transcript`);
+    return 'Meeting was conducted but no audio transcript was captured. This may be due to microphone permissions or technical issues.';
+  } catch (error) {
+    console.error('❌ Error capturing meeting transcript:', error);
+    return 'Meeting transcript unavailable due to technical error.';
+  }
 };
 
 /**
@@ -190,6 +199,14 @@ export const getMeetingParticipants = async (meetingId: string): Promise<Meeting
     
     const meeting = await meetingsCollection.findOne({ meetingId });
     
+    console.log(`📋 Meeting data:`, {
+      meetingId: meeting?.meetingId,
+      title: meeting?.title,
+      hostId: meeting?.hostId,
+      participants: meeting?.participants,
+      participantCount: meeting?.participants?.length || 0
+    });
+    
     if (!meeting) {
       console.warn(`⚠️ Meeting ${meetingId} not found in database, using fallback data`);
       return getFallbackParticipants();
@@ -197,53 +214,86 @@ export const getMeetingParticipants = async (meetingId: string): Promise<Meeting
     
     console.log(`📋 Found meeting: ${meeting.title} with ${meeting.participants?.length || 0} participants`);
     
-    // Get real participant data
+    // Get real participant data with deduplication
     const participants: MeetingSummaryData['participants'] = [];
+    const seenEmails = new Set<string>(); // Track emails to avoid duplicates
     
-    // Add host (advisor)
+    // Add host (advisor) first
     if (meeting.hostId) {
+      console.log(`👤 Looking up host data for: ${meeting.hostId}`);
       const hostUser = await getUserData(meeting.hostId);
       if (hostUser) {
+        console.log(`✅ Found host data:`, hostUser);
         participants.push({
           userId: meeting.hostId,
           name: hostUser.name || 'Meeting Host',
           email: hostUser.email || '',
           role: 'advisor' as const
         });
+        seenEmails.add(hostUser.email.toLowerCase());
+      } else {
+        console.warn(`⚠️ Host data not found for: ${meeting.hostId}`);
       }
     }
     
-    // Add other participants (clients)
+    // Add other participants (clients) with deduplication
     if (meeting.participants && Array.isArray(meeting.participants)) {
       for (const participant of meeting.participants) {
         // Skip if already added as host
         if (participant === meeting.hostId) continue;
         
+        console.log(`👤 Processing participant: ${participant}`);
+        
+        let participantEmail = '';
+        let participantName = '';
+        
         // Check if participant is an email address or user ID
         if (participant.includes('@')) {
           // It's an email address - use it directly
-          participants.push({
-            userId: `email_${participant}`,
-            name: participant.split('@')[0], // Use email prefix as name
-            email: participant,
-            role: 'client' as const
-          });
+          participantEmail = participant;
+          participantName = participant.split('@')[0]; // Use email prefix as name
+          console.log(`📧 Participant is email: ${participant}`);
         } else {
           // It's a user ID - look up user data
+          console.log(`👤 Looking up participant data for: ${participant}`);
           const participantUser = await getUserData(participant);
           if (participantUser) {
-            participants.push({
-              userId: participant,
-              name: participantUser.name || 'Meeting Participant',
-              email: participantUser.email || '',
-              role: 'client' as const
-            });
+            console.log(`✅ Found participant data:`, participantUser);
+            participantEmail = participantUser.email;
+            participantName = participantUser.name || 'Meeting Participant';
+          } else {
+            console.warn(`⚠️ Participant data not found for: ${participant}`);
+            continue; // Skip this participant if no data found
           }
         }
+        
+        // Deduplicate based on email (case-insensitive)
+        const emailLower = participantEmail.toLowerCase();
+        if (seenEmails.has(emailLower)) {
+          console.log(`🔄 Skipping duplicate participant with email: ${participantEmail}`);
+          continue;
+        }
+        
+        // Add participant if not duplicate
+        participants.push({
+          userId: participant.includes('@') ? `email_${participant}` : participant,
+          name: participantName,
+          email: participantEmail,
+          role: 'client' as const
+        });
+        seenEmails.add(emailLower);
+        console.log(`✅ Added participant: ${participantName} (${participantEmail})`);
       }
     }
     
-    console.log(`✅ Found ${participants.length} real participants with emails`);
+    console.log(`✅ Found ${participants.length} unique participants with emails:`, participants);
+    
+    // If no real participants found, use fallback
+    if (participants.length === 0) {
+      console.warn(`⚠️ No real participants found, using fallback data`);
+      return getFallbackParticipants();
+    }
+    
     return participants;
     
   } catch (error) {
@@ -302,4 +352,7 @@ export const determineMeetingType = (meetingData: any): MeetingSummaryData['meet
   // TODO: Implement logic to determine meeting type
   // For now, default to mortgage consultation
   return 'mortgage_consultation';
-}; 
+};
+
+
+

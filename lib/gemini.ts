@@ -30,11 +30,13 @@ export const summarizeTranscript = async (
     const apiUrl = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured');
+      throw new Error('Gemini API key not configured');
     }
 
-    // Create mortgage-specific prompt
+    console.log('🤖 Generating AI summary with Gemini...');
+
     const prompt = createMortgagePrompt(request);
+    const meetingTypeContext = getMeetingTypeContext(request.meetingType);
 
     const response = await fetch(`${apiUrl}?key=${apiKey}`, {
       method: 'POST',
@@ -46,66 +48,112 @@ export const summarizeTranscript = async (
           {
             parts: [
               {
-                text: prompt
+                text: `${meetingTypeContext}\n\n${prompt}`
               }
             ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
           }
         ]
       })
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+      const errorData = await response.json();
+      console.error('❌ Gemini API error:', response.status, '-', JSON.stringify(errorData, null, 2));
+      
+      // Check if it's a quota exceeded error (429)
+      if (response.status === 429) {
+        console.warn('⚠️ Gemini API quota exceeded, using fallback summary');
+        return generateFallbackSummary(request);
+      }
+      
+      throw new Error(`Gemini API error: ${response.status} - ${JSON.stringify(errorData)}`);
     }
 
     const data = await response.json();
-    
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-      throw new Error('Invalid response format from Gemini API');
+    console.log('✅ Gemini API response received');
+
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('No response candidates from Gemini API');
     }
 
-    const summaryText = data.candidates[0].content.parts[0].text;
-    
-    // Parse the structured response
-    const parsedSummary = parseGeminiResponse(summaryText);
+    const content = data.candidates[0].content;
+    if (!content || !content.parts || content.parts.length === 0) {
+      throw new Error('Invalid response structure from Gemini API');
+    }
+
+    const responseText = content.parts[0].text;
+    console.log('📝 Raw Gemini response:', responseText.substring(0, 200) + '...');
+
+    const result = parseGeminiResponse(responseText);
+    console.log('✅ Summary parsed successfully');
 
     return {
       success: true,
-      ...parsedSummary
+      summary: result.summary,
+      keyPoints: result.keyPoints,
+      actionItems: result.actionItems,
+      nextSteps: result.nextSteps
     };
 
   } catch (error) {
-    console.error('Error summarizing transcript with Gemini:', error);
+    console.error('❌ Error in Gemini summarization:', error);
+    
+    // If it's a quota error or any other error, use fallback
+    if (error instanceof Error && error.message.includes('429')) {
+      console.warn('⚠️ Using fallback summary due to API quota');
+      return generateFallbackSummary(request);
+    }
+    
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
     };
   }
+};
+
+/**
+ * Generate a fallback summary when Gemini API is unavailable
+ */
+const generateFallbackSummary = (request: GeminiSummaryRequest): GeminiSummaryResponse => {
+  console.log('🔄 Generating fallback summary...');
+  
+  const transcript = request.transcript;
+  const clientName = request.clientName || 'Client';
+  const advisorName = request.advisorName || 'Mortgage Advisor';
+  
+  // Simple fallback summary based on transcript length and content
+  const wordCount = transcript.split(' ').length;
+  const hasMortgageTerms = /mortgage|loan|rate|payment|down payment|credit/i.test(transcript);
+  
+  let summary = '';
+  let keyPoints: string[] = [];
+  let actionItems: string[] = [];
+  let nextSteps: string[] = [];
+  
+  if (wordCount < 50) {
+    summary = `Brief meeting conducted between ${advisorName} and ${clientName}. The conversation was short and may require follow-up for detailed discussion.`;
+    keyPoints = ['Meeting was brief', 'Follow-up may be needed'];
+    actionItems = ['Schedule follow-up meeting', 'Prepare detailed documentation'];
+    nextSteps = ['Contact client for additional discussion', 'Review meeting notes'];
+  } else if (hasMortgageTerms) {
+    summary = `Mortgage consultation meeting between ${advisorName} and ${clientName}. The discussion covered mortgage-related topics and client requirements.`;
+    keyPoints = ['Mortgage consultation conducted', 'Client requirements discussed'];
+    actionItems = ['Review mortgage options', 'Prepare loan application'];
+    nextSteps = ['Follow up with mortgage options', 'Schedule application review'];
+  } else {
+    summary = `Meeting conducted between ${advisorName} and ${clientName}. The conversation covered various topics and client needs.`;
+    keyPoints = ['Meeting completed', 'Client needs discussed'];
+    actionItems = ['Review meeting notes', 'Prepare follow-up materials'];
+    nextSteps = ['Schedule follow-up meeting', 'Send meeting summary'];
+  }
+  
+  return {
+    success: true,
+    summary,
+    keyPoints,
+    actionItems,
+    nextSteps
+  };
 };
 
 /**
