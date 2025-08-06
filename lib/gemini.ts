@@ -36,7 +36,7 @@ export const summarizeTranscript = async (
     console.log('🤖 Generating AI summary with Gemini...');
 
     const prompt = createMortgagePrompt(request);
-    const meetingTypeContext = getMeetingTypeContext(request.meetingType);
+    const meetingTypeContext = getMeetingTypeContext(request.meetingType || 'general');
 
     const response = await fetch(`${apiUrl}?key=${apiKey}`, {
       method: 'POST',
