@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { meetingId, startTime, endTime } = body;
+    const { meetingId, startTime, endTime, triggerType = 'manual_end' } = body;
 
     if (!meetingId) {
       return NextResponse.json(
@@ -29,7 +29,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🤖 Processing automatic summary for meeting: ${meetingId}`);
+    console.log(`🤖 Processing automatic summary for meeting: ${meetingId} (Trigger: ${triggerType})`);
+
+    // Handle different trigger types
+    let summaryMessage = 'Meeting summary generated and sent successfully';
+    switch (triggerType) {
+      case 'host_departure':
+        summaryMessage = 'Meeting summary generated due to host departure';
+        break;
+      case 'call_ended':
+        summaryMessage = 'Meeting summary generated due to call ending';
+        break;
+      case 'page_closed':
+        summaryMessage = 'Meeting summary generated due to page close';
+        break;
+      case 'all_participants_left':
+        summaryMessage = 'Meeting summary generated - all participants left';
+        break;
+      case 'meeting_timeout':
+        summaryMessage = 'Meeting summary generated due to timeout';
+        break;
+      case 'network_disconnected':
+        summaryMessage = 'Meeting summary generated due to network issues';
+        break;
+      case 'manual_end':
+      default:
+        summaryMessage = 'Meeting summary generated manually';
+        break;
+    }
 
     // Step 1: Capture meeting transcript
     const transcript = await captureMeetingTranscript(meetingId);
@@ -67,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Meeting summary generated and sent successfully',
+      message: summaryMessage,
       summary: result.summary,
       keyPoints: result.keyPoints,
       actionItems: result.actionItems,
