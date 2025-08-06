@@ -25,7 +25,7 @@ import {
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
-import AudioTroubleshooter from './AudioTroubleshooter';
+
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
@@ -226,12 +226,8 @@ const MeetingRoom = () => {
     } catch (error) {
       console.error('❌ Device initialization failed:', error);
       
-      // Show user-friendly error message
-      setAudioError(
-        error instanceof Error && error.message.includes('permission') 
-          ? 'Microphone access denied. Please allow microphone permissions and refresh the page.'
-          : 'Failed to initialize microphone. Please check your device settings and try again.'
-      );
+            // Log error for debugging
+      console.error('Microphone initialization failed:', error);
     }
   };
 
@@ -251,7 +247,7 @@ const MeetingRoom = () => {
 
 
   // Audio health check and recovery
-  const [audioError, setAudioError] = useState<string | null>(null);
+
 
   useEffect(() => {
     if (!call) return;
@@ -268,7 +264,7 @@ const MeetingRoom = () => {
         });
         stream.getTracks().forEach(track => track.stop());
         failCount = 0;
-        setAudioError(null);
+
       } catch (err) {
         failCount++;
         // Try to recover by toggling mic
@@ -280,7 +276,7 @@ const MeetingRoom = () => {
           // Ignore SDK errors
         }
         if (failCount >= 3) {
-          setAudioError('Microphone/audio lost. Please check your device or leave and rejoin the meeting.');
+          console.warn('Microphone/audio lost. Please check your device or leave and rejoin the meeting.');
         }
       }
     };
@@ -497,13 +493,8 @@ const MeetingRoom = () => {
         </button>
 
         {!isPersonalRoom && <EndCallButton />}
-        <AudioTroubleshooter />
       </motion.div>
-      {audioError && (
-        <div className="fixed bottom-20 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg">
-          <strong>Audio Error:</strong> {audioError}
-        </div>
-      )}
+
     </div>
   );
 };
