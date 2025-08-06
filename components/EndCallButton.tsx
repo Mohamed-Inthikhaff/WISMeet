@@ -4,6 +4,7 @@ import { useCall, useCallStateHooks } from '@stream-io/video-react-sdk';
 import { Button } from './ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { transcriptContext } from '@/lib/transcript-context';
 
 const EndCallButton = () => {
   const call = useCall();
@@ -30,7 +31,30 @@ const EndCallButton = () => {
     try {
       setIsProcessing(true);
       
-      // Step 1: Trigger automatic summary generation
+      // Step 1: Store meeting transcript
+      console.log('📝 Storing meeting transcript...');
+      
+      // Get transcript from the context (populated by MeetingTranscription component)
+      const realTranscript = transcriptContext.getTranscript(call.id);
+      
+      const transcriptResponse = await fetch('/api/meetings/transcript', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          meetingId: call.id,
+          transcript: realTranscript || 'No transcript available for this meeting.'
+        })
+      });
+
+      if (!transcriptResponse.ok) {
+        console.warn('⚠️ Failed to store transcript, but continuing with summary');
+      } else {
+        console.log('✅ Transcript stored successfully');
+      }
+      
+      // Step 2: Trigger automatic summary generation
       console.log('🤖 Triggering automatic meeting summary...');
       
       const summaryResponse = await fetch('/api/mortgage-assistant/auto-summary', {
@@ -41,7 +65,8 @@ const EndCallButton = () => {
         body: JSON.stringify({
           meetingId: call.id,
           startTime: call.state.createdAt,
-          endTime: new Date().toISOString()
+          endTime: new Date().toISOString(),
+          triggerType: 'manual_end'
         })
       });
 

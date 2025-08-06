@@ -25,11 +25,13 @@ import {
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
+import MeetingTranscription from './MeetingTranscription';
 
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
 import { audioMonitor, AudioHealthStatus } from '@/lib/audio-monitor';
+import { createAutomaticSummaryTriggers } from '@/lib/automatic-summary-triggers';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
 
@@ -43,6 +45,7 @@ const MeetingRoom = () => {
   const [showChat, setShowChat] = useState(false);
   const [devicesInitialized, setDevicesInitialized] = useState(false);
   const [socket, setSocket] = useState<any>(null);
+  const [meetingTranscript, setMeetingTranscript] = useState('');
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const callingState = useCallCallingState();
   const localParticipant = useLocalParticipant();
@@ -63,8 +66,8 @@ const MeetingRoom = () => {
   // Get participants from call state
   const participants = call?.state.participants || [];
 
-  // Get accurate participant count including local participant
-  const participantCount = participants.length + (localParticipant ? 1 : 0);
+  // Get accurate participant count - Stream SDK already includes local participant
+  const participantCount = participants.length;
 
   // Debug logging for participant status (reduced frequency)
   useEffect(() => {
@@ -74,9 +77,10 @@ const MeetingRoom = () => {
     console.log('MeetingRoom: Participant status update', {
       participantCount: currentCount,
       participants: participants.map(p => ({ id: p.userId, name: p.name })),
-      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.name } : null
+      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.name } : null,
+      isLocalParticipantIncluded: participants.some(p => p.userId === localParticipant?.userId)
     });
-  }, [participantCount]); // Only depend on participantCount, not individual participants
+  }, [participantCount, participants, localParticipant]); // Include all dependencies for accurate logging
 
   // Initialize socket connection for participant sync
   useEffect(() => {
@@ -177,6 +181,37 @@ const MeetingRoom = () => {
       call.off('participantLeft', handleParticipantLeft);
     };
   }, [socket, call, localParticipant]);
+
+  // Comprehensive Automatic Summary Monitoring
+  useEffect(() => {
+    if (!call || !localParticipant) return;
+
+    const isHost = localParticipant.userId === call.state.createdBy?.id;
+    
+    console.log('🎯 Setting up comprehensive automatic summary monitoring...', {
+      isHost,
+      meetingId: call.id,
+      localParticipantId: localParticipant.userId
+    });
+
+    // Create automatic summary triggers
+    const automaticSummaryTriggers = createAutomaticSummaryTriggers({
+      meetingId: call.id,
+      call,
+      localParticipant,
+      isHost
+    });
+
+    // Start monitoring when call is joined
+    if (callingState === 'joined') {
+      automaticSummaryTriggers.startMonitoring();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      automaticSummaryTriggers.stopMonitoring();
+    };
+  }, [call, localParticipant, callingState]);
 
 
   // Enhanced microphone initialization with better error handling
@@ -494,6 +529,13 @@ const MeetingRoom = () => {
 
         {!isPersonalRoom && <EndCallButton />}
       </motion.div>
+      
+      {/* Real-time transcription service */}
+      <MeetingTranscription
+        meetingId={call?.id || ''}
+        isActive={callingState === 'joined'}
+        onTranscriptUpdate={setMeetingTranscript}
+      />
 
     </div>
   );
