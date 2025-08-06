@@ -25,9 +25,13 @@ import {
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
+import MeetingTranscription from './MeetingTranscription';
+
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
+import { audioMonitor, AudioHealthStatus } from '@/lib/audio-monitor';
+import { createAutomaticSummaryTriggers } from '@/lib/automatic-summary-triggers';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
 
@@ -41,6 +45,7 @@ const MeetingRoom = () => {
   const [showChat, setShowChat] = useState(false);
   const [devicesInitialized, setDevicesInitialized] = useState(false);
   const [socket, setSocket] = useState<any>(null);
+  const [meetingTranscript, setMeetingTranscript] = useState('');
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const callingState = useCallCallingState();
   const localParticipant = useLocalParticipant();
@@ -61,8 +66,8 @@ const MeetingRoom = () => {
   // Get participants from call state
   const participants = call?.state.participants || [];
 
-  // Get accurate participant count including local participant
-  const participantCount = participants.length + (localParticipant ? 1 : 0);
+  // Get accurate participant count - Stream SDK already includes local participant
+  const participantCount = participants.length;
 
   // Debug logging for participant status (reduced frequency)
   useEffect(() => {
@@ -72,9 +77,10 @@ const MeetingRoom = () => {
     console.log('MeetingRoom: Participant status update', {
       participantCount: currentCount,
       participants: participants.map(p => ({ id: p.userId, name: p.name })),
-      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.name } : null
+      localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.name } : null,
+      isLocalParticipantIncluded: participants.some(p => p.userId === localParticipant?.userId)
     });
-  }, [participantCount]); // Only depend on participantCount, not individual participants
+  }, [participantCount, participants, localParticipant]); // Include all dependencies for accurate logging
 
   // Initialize socket connection for participant sync
   useEffect(() => {
@@ -134,6 +140,33 @@ const MeetingRoom = () => {
           userId: participant.userId,
           status: 'left'
         });
+
+        // Check if meeting should end (only local participant remaining)
+        const remainingParticipants = call.state.participants.filter(p => p.userId !== participant.userId);
+        if (remainingParticipants.length === 0 && localParticipant) {
+          console.log('🤖 All participants left, triggering automatic summary...');
+          
+          // Trigger automatic summary generation
+          fetch('/api/mortgage-assistant/auto-summary', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              meetingId: call.id,
+              startTime: call.state.createdAt,
+              endTime: new Date().toISOString()
+            })
+          }).then(response => {
+            if (response.ok) {
+              console.log('✅ Automatic summary generated when meeting ended');
+            } else {
+              console.warn('⚠️ Automatic summary generation failed');
+            }
+          }).catch(error => {
+            console.error('❌ Error generating automatic summary:', error);
+          });
+        }
       } catch (error) {
         console.error('Error syncing participant leave:', error);
       }
@@ -147,86 +180,147 @@ const MeetingRoom = () => {
       call.off('participantJoined', handleParticipantJoined);
       call.off('participantLeft', handleParticipantLeft);
     };
-  }, [socket, call]);
+  }, [socket, call, localParticipant]);
+
+  // Comprehensive Automatic Summary Monitoring
+  useEffect(() => {
+    if (!call || !localParticipant) return;
+
+    const isHost = localParticipant.userId === call.state.createdBy?.id;
+    
+    console.log('🎯 Setting up comprehensive automatic summary monitoring...', {
+      isHost,
+      meetingId: call.id,
+      localParticipantId: localParticipant.userId
+    });
+
+    // Create automatic summary triggers
+    const automaticSummaryTriggers = createAutomaticSummaryTriggers({
+      meetingId: call.id,
+      call,
+      localParticipant,
+      isHost
+    });
+
+    // Start monitoring when call is joined
+    if (callingState === 'joined') {
+      automaticSummaryTriggers.startMonitoring();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      automaticSummaryTriggers.stopMonitoring();
+    };
+  }, [call, localParticipant, callingState]);
 
 
-  // Initialize devices based on setup preferences - only once
-  const initializeDevices = useCallback(() => {
-    if (call && !devicesInitialized) {
-      const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
-      const initialMicEnabled = call.state.custom?.initialMicEnabled;
+  // Enhanced microphone initialization with better error handling
+  const initializeDevices = async () => {
+    if (!call || !localParticipant) return;
 
-      console.log('Initializing devices with settings:', {
-        initialCameraEnabled,
-        initialMicEnabled
+    const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
+    const initialMicEnabled = call.state.custom?.initialMicEnabled;
+
+    console.log('🎤 Initializing devices with settings:', {
+      initialCameraEnabled,
+      initialMicEnabled
+    });
+
+    try {
+      // First, check if we can access the microphone at all
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1,
+        },
+        video: false
       });
 
-      // Use a delay to ensure call is fully initialized
-      const timer = setTimeout(async () => {
-        if (call) {
-          try {
-            // Initialize microphone first with proper error handling
-            if (initialMicEnabled === false) {
-              await call.microphone.disable();
-              console.log('Microphone disabled on join');
-            } else {
-              // Test microphone access before enabling
-              try {
-                const audioStream = await navigator.mediaDevices.getUserMedia({ 
-                  audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                  },
-                  video: false 
-                });
-                
-                // Verify audio track is available
-                const audioTracks = audioStream.getAudioTracks();
-                if (audioTracks.length > 0) {
-                  console.log('Microphone access verified, enabling with Stream SDK');
-                  await call.microphone.enable();
-                  console.log('Microphone enabled on join');
-                  
-                  // Verify microphone is actually enabled
-                  setTimeout(() => {
-                    console.log('Microphone enabled on join - verification complete');
-                  }, 1000);
-                } else {
-                  console.warn('No audio tracks available, microphone may not work');
-                  await call.microphone.enable(); // Still try to enable
-                }
-                
-                // Stop the test stream
-                audioStream.getTracks().forEach(track => track.stop());
-                
-              } catch (audioErr) {
-                console.error('Failed to access microphone on join:', audioErr);
-                // Don't fail the join, but log the issue
-              }
-            }
-            
-            // Initialize camera
-            if (initialCameraEnabled === false) {
-              await call.camera.disable();
-              console.log('Camera disabled on join');
-            }
-          } catch (err) {
-            console.error('Error initializing devices in meeting room:', err);
-          }
-        }
-        setDevicesInitialized(true);
-      }, 100);
+      // Check if we got audio tracks
+      const audioTracks = testStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        throw new Error('No audio tracks available');
+      }
 
-      return () => clearTimeout(timer);
+      // Clean up test stream
+      testStream.getTracks().forEach(track => track.stop());
+
+      // Now enable microphone with Stream SDK
+      await call.microphone.enable();
+      console.log('✅ Microphone enabled successfully');
+
+      // Enable camera if needed
+      if (initialCameraEnabled) {
+        await call.camera.enable();
+        console.log('✅ Camera enabled successfully');
+      }
+
+    } catch (error) {
+      console.error('❌ Device initialization failed:', error);
+      
+            // Log error for debugging
+      console.error('Microphone initialization failed:', error);
     }
-    return () => {}; // Return empty cleanup function when conditions aren't met
-  }, [call, devicesInitialized]);
+  };
 
   useEffect(() => {
-    const cleanup = initializeDevices();
-    return cleanup;
-  }, [initializeDevices]);
+    if (call && localParticipant && !devicesInitialized) {
+      // Add a small delay to ensure everything is ready
+      const timer = setTimeout(() => {
+        initializeDevices();
+        setDevicesInitialized(true);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [call, localParticipant, devicesInitialized]);
+
+  // Enhanced audio monitoring and recovery mechanism
+
+
+  // Audio health check and recovery
+
+
+  useEffect(() => {
+    if (!call) return;
+    let failCount = 0;
+    let stopped = false;
+
+    const checkAudio = async () => {
+      if (stopped) return;
+      try {
+        // Try to get a new audio stream
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false
+        });
+        stream.getTracks().forEach(track => track.stop());
+        failCount = 0;
+
+      } catch (err) {
+        failCount++;
+        // Try to recover by toggling mic
+        try {
+          await call.microphone.disable();
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await call.microphone.enable();
+        } catch (sdkErr) {
+          // Ignore SDK errors
+        }
+        if (failCount >= 3) {
+          console.warn('Microphone/audio lost. Please check your device or leave and rejoin the meeting.');
+        }
+      }
+    };
+    const interval = setInterval(checkAudio, 15000);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [call]);
 
 
   if (callingState !== CallingState.JOINED) {
@@ -435,6 +529,14 @@ const MeetingRoom = () => {
 
         {!isPersonalRoom && <EndCallButton />}
       </motion.div>
+      
+      {/* Real-time transcription service */}
+      <MeetingTranscription
+        meetingId={call?.id || ''}
+        isActive={callingState === 'joined'}
+        onTranscriptUpdate={setMeetingTranscript}
+      />
+
     </div>
   );
 };
