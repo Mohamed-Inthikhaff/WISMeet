@@ -26,7 +26,6 @@ import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import MeetingChat from './MeetingChat';
 import AudioTroubleshooter from './AudioTroubleshooter';
-import AudioMonitor from './AudioMonitor';
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
@@ -249,73 +248,10 @@ const MeetingRoom = () => {
   }, [call, localParticipant, devicesInitialized]);
 
   // Enhanced audio monitoring and recovery mechanism
-  useEffect(() => {
-    if (!call || !localParticipant) return;
 
-    let audioCheckInterval: NodeJS.Timeout;
-    let failCount = 0;
-    const maxFails = 3;
-
-    const checkAudioHealth = async () => {
-      try {
-        // Test if we can access microphone
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: { 
-            echoCancellation: true, 
-            noiseSuppression: true, 
-            autoGainControl: true 
-          },
-          video: false 
-        });
-        
-        const audioTracks = stream.getAudioTracks();
-        
-        // Clean up test stream
-        stream.getTracks().forEach(track => track.stop());
-        
-        if (audioTracks.length === 0) {
-          console.warn('🎤 Audio track lost');
-          failCount++;
-          
-          if (failCount >= maxFails) {
-            console.error('❌ Audio access failed after multiple attempts');
-            setAudioError('Microphone not working. Please check your device and try refreshing the page.');
-            setAudioStatus('error');
-          } else {
-            setAudioStatus('warning');
-          }
-        } else {
-          // Audio is working, reset fail count
-          failCount = 0;
-          setAudioError(null);
-          setAudioStatus('good');
-        }
-      } catch (error) {
-        console.warn('🎤 Audio health check failed:', error);
-        failCount++;
-        
-        if (failCount >= maxFails) {
-          setAudioError('Cannot access microphone. Please check browser permissions and device settings.');
-          setAudioStatus('error');
-        } else {
-          setAudioStatus('warning');
-        }
-      }
-    };
-
-    // Check audio health every 30 seconds (less frequent)
-    audioCheckInterval = setInterval(checkAudioHealth, 30000);
-
-    return () => {
-      if (audioCheckInterval) {
-        clearInterval(audioCheckInterval);
-      }
-    };
-  }, [call, localParticipant]);
 
   // Audio health check and recovery
   const [audioError, setAudioError] = useState<string | null>(null);
-  const [audioStatus, setAudioStatus] = useState<'good' | 'warning' | 'error'>('good');
 
   useEffect(() => {
     if (!call) return;
@@ -562,7 +498,6 @@ const MeetingRoom = () => {
 
         {!isPersonalRoom && <EndCallButton />}
         <AudioTroubleshooter />
-        <AudioMonitor />
       </motion.div>
       {audioError && (
         <div className="fixed bottom-20 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg">
