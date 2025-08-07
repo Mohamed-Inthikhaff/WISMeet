@@ -3,6 +3,9 @@ import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
 import { MessageReaction } from '@/lib/types/chat';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 // GET /api/chat/export?meetingId=xxx&format=json|csv
 export async function GET(request: NextRequest) {
   try {
