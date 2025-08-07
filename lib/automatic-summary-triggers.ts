@@ -49,6 +49,14 @@ export class AutomaticSummaryTriggers {
   private config: TriggerConfig;
   private timeoutId: NodeJS.Timeout | null = null;
   private isMonitoring = false;
+  private eventHandlers: {
+    participantLeft?: (participant: any) => void;
+    callStateChanged?: (state: any) => void;
+    beforeUnload?: () => void;
+    visibilityChange?: () => void;
+    online?: () => void;
+    offline?: () => void;
+  } = {};
 
   constructor(config: TriggerConfig) {
     this.config = config;
@@ -107,28 +115,28 @@ export class AutomaticSummaryTriggers {
   private setupHostDepartureDetection(): void {
     if (!this.config.isHost) return;
 
-    const handleParticipantLeft = (participant: any) => {
+    this.eventHandlers.participantLeft = (participant: any) => {
       if (participant.userId === this.config.localParticipant.userId) {
         console.log('🏠 Host left the meeting, triggering automatic summary...');
         this.triggerSummary('host_departure');
       }
     };
 
-    this.config.call.on('participantLeft', handleParticipantLeft);
+    this.config.call.on('participantLeft', this.eventHandlers.participantLeft);
   }
 
   /**
    * Setup call state monitoring
    */
   private setupCallStateMonitoring(): void {
-    const handleCallStateChange = (state: any) => {
+    this.eventHandlers.callStateChanged = (state: any) => {
       if (state === 'ended' || state === 'disconnected') {
         console.log('📞 Call ended/disconnected, triggering automatic summary...');
         this.triggerSummary('call_ended');
       }
     };
 
-    this.config.call.on('call.state.changed', handleCallStateChange);
+    this.config.call.on('call.state.changed', this.eventHandlers.callStateChanged);
   }
 
   /**
@@ -137,20 +145,20 @@ export class AutomaticSummaryTriggers {
   private setupPageCloseDetection(): void {
     if (!this.config.isHost) return;
 
-    const handleBeforeUnload = () => {
+    this.eventHandlers.beforeUnload = () => {
       console.log('🔄 Page closing, triggering automatic summary...');
       this.triggerSummary('page_closed');
     };
 
-    const handleVisibilityChange = () => {
+    this.eventHandlers.visibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         console.log('👁️ Page hidden, triggering automatic summary...');
         this.triggerSummary('page_closed');
       }
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', this.eventHandlers.beforeUnload);
+    document.addEventListener('visibilitychange', this.eventHandlers.visibilityChange);
   }
 
   /**
@@ -173,22 +181,29 @@ export class AutomaticSummaryTriggers {
   private setupNetworkMonitoring(): void {
     if (!this.config.isHost) return;
 
-    const handleNetworkChange = () => {
+    this.eventHandlers.online = () => {
       if (!navigator.onLine) {
         console.log('🌐 Network disconnected, triggering automatic summary...');
         this.triggerSummary('network_disconnected');
       }
     };
 
-    window.addEventListener('online', handleNetworkChange);
-    window.addEventListener('offline', handleNetworkChange);
+    this.eventHandlers.offline = () => {
+      if (!navigator.onLine) {
+        console.log('🌐 Network disconnected, triggering automatic summary...');
+        this.triggerSummary('network_disconnected');
+      }
+    };
+
+    window.addEventListener('online', this.eventHandlers.online);
+    window.addEventListener('offline', this.eventHandlers.offline);
   }
 
   /**
    * Setup all participants left detection
    */
   private setupAllParticipantsLeft(): void {
-    const handleParticipantLeft = (participant: any) => {
+    this.eventHandlers.participantLeft = (participant: any) => {
       const remainingParticipants = this.config.call.state.participants.filter(
         (p: any) => p.userId !== participant.userId
       );
@@ -199,7 +214,7 @@ export class AutomaticSummaryTriggers {
       }
     };
 
-    this.config.call.on('participantLeft', handleParticipantLeft);
+    this.config.call.on('participantLeft', this.eventHandlers.participantLeft);
   }
 
   /**
@@ -207,16 +222,31 @@ export class AutomaticSummaryTriggers {
    */
   private removeEventListeners(): void {
     // Remove call event listeners
-    this.config.call.off('participantLeft');
-    this.config.call.off('call.state.changed');
+    if (this.eventHandlers.participantLeft) {
+      this.config.call.off('participantLeft', this.eventHandlers.participantLeft);
+    }
+    if (this.eventHandlers.callStateChanged) {
+      this.config.call.off('call.state.changed', this.eventHandlers.callStateChanged);
+    }
     
     // Remove window event listeners
-    window.removeEventListener('beforeunload', () => {});
-    window.removeEventListener('online', () => {});
-    window.removeEventListener('offline', () => {});
+    if (this.eventHandlers.beforeUnload) {
+      window.removeEventListener('beforeunload', this.eventHandlers.beforeUnload);
+    }
+    if (this.eventHandlers.online) {
+      window.removeEventListener('online', this.eventHandlers.online);
+    }
+    if (this.eventHandlers.offline) {
+      window.removeEventListener('offline', this.eventHandlers.offline);
+    }
     
     // Remove document event listeners
-    document.removeEventListener('visibilitychange', () => {});
+    if (this.eventHandlers.visibilityChange) {
+      document.removeEventListener('visibilitychange', this.eventHandlers.visibilityChange);
+    }
+
+    // Clear all event handler references
+    this.eventHandlers = {};
   }
 
   /**

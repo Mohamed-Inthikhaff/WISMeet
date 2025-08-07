@@ -38,6 +38,12 @@ export class TranscriptionService {
    * Start real-time transcription
    */
   async startTranscription(): Promise<boolean> {
+    // Prevent multiple simultaneous start attempts
+    if (this.isRecording) {
+      console.log('⚠️ Transcription already in progress, skipping start request');
+      return true;
+    }
+
     try {
       console.log('🎤 Starting real-time transcription for meeting:', this.meetingId);
       
@@ -106,10 +112,17 @@ export class TranscriptionService {
 
       // Handle recognition end
       this.recognition.onend = () => {
-        console.log('🔄 Speech recognition ended, restarting if still recording...');
-        if (this.isRecording) {
-          // Restart recognition if still recording
-          this.recognition.start();
+        console.log('🔄 Speech recognition ended');
+        // Only restart if we're still supposed to be recording and haven't been stopped
+        if (this.isRecording && this.recognition) {
+          console.log('🔄 Restarting speech recognition...');
+          try {
+            this.recognition.start();
+          } catch (error) {
+            console.warn('⚠️ Failed to restart speech recognition:', error);
+            // Don't restart again if it fails
+            this.isRecording = false;
+          }
         }
       };
 

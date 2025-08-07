@@ -27,7 +27,7 @@ export const summarizeTranscript = async (
 ): Promise<GeminiSummaryResponse> => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    const apiUrl = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+    const apiUrl = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent';
 
     if (!apiKey) {
       throw new Error('Gemini API key not configured');
