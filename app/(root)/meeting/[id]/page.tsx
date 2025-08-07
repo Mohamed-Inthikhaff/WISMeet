@@ -19,6 +19,18 @@ const MeetingPage = () => {
   const { call, isCallLoading, error } = useGetCallById(id);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('MeetingPage: State update', {
+      isLoaded,
+      isCallLoading,
+      hasCall: !!call,
+      callId: call?.id,
+      isSetupComplete,
+      hasError: !!error
+    });
+  }, [isLoaded, isCallLoading, call, isSetupComplete, error]);
+
   if (!isLoaded || isCallLoading) return <Loader />;
 
   if (error) return (
@@ -49,7 +61,10 @@ const MeetingPage = () => {
       <StreamCall call={call}>
         {!isSetupComplete ? (
             <ErrorBoundary meetingId={call?.id} userId={user?.id}>
-          <MeetingSetup setIsSetupComplete={setIsSetupComplete} />
+          <MeetingSetup setIsSetupComplete={(value) => {
+            console.log('MeetingPage: Setup complete callback', { value });
+            setIsSetupComplete(value);
+          }} />
             </ErrorBoundary>
         ) : (
             <ErrorBoundary meetingId={call?.id} userId={user?.id}>
