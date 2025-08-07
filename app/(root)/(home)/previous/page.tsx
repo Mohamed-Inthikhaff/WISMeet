@@ -7,6 +7,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { format } from 'date-fns';
 
+// Force dynamic rendering since this page uses authentication
+export const dynamic = 'force-dynamic';
+
 const LoadingSpinner = () => (
   <div className="flex items-center gap-2 text-gray-400">
     <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
