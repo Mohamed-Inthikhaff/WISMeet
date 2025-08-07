@@ -3,6 +3,9 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion } from 'framer-motion';
+
+// Force dynamic rendering since this page uses authentication
+export const dynamic = 'force-dynamic';
 import { MessageSquare, ArrowLeft, Clock, User, Send, Download } from 'lucide-react';
 import { Message } from '@/lib/types/chat';
 import { format } from 'date-fns';
