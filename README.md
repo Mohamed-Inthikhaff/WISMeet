@@ -25,7 +25,7 @@ A comprehensive video conferencing platform built with Next.js, Stream Video SDK
 1. Clone the repository
 2. Install dependencies: `npm install`
 3. Copy `.env.example` to `.env.local` and fill in your environment variables
-4. Configure Mortgage Assistant Bot integrations (see [Setup Guide](MORTGAGE_ASSISTANT_SETUP.md))
+4. Configure Mortgage Assistant Bot integrations (see [Setup Guide](#mortgage-assistant-bot-setup))
 5. Run the development server: `npm run dev`
 6. Open [http://localhost:3000](http://localhost:3000)
 
@@ -54,7 +54,7 @@ DATABASE_URL=your_database_url
 ```bash
 # Gemini AI Configuration
 GEMINI_API_KEY=your_gemini_api_key
-GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent
+GEMINI_API_URL=https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent
 
 # Google Calendar API Configuration
 GOOGLE_CLIENT_ID=your_google_client_id
@@ -68,37 +68,61 @@ EMAIL_PORT=587
 EMAIL_USER=your_email@gmail.com
 EMAIL_PASS=your_app_password
 EMAIL_FROM=noreply@wismeet.com
+
+# Alternative: SendGrid Configuration
+SENDGRID_API_KEY=your_sendgrid_api_key
+SENDGRID_FROM_EMAIL=noreply@wismeet.com
 ```
 
 ## Mortgage Assistant Bot Setup
 
-For detailed setup instructions for the Mortgage Meeting Assistant Bot, including:
-- Gemini AI configuration
-- Google Calendar API setup
-- Email service configuration
-- Testing procedures
+### Prerequisites
+- Node.js 18+ and npm 9+
+- Access to Google Cloud Console
+- Gemini AI API access
+- Email service (Gmail SMTP or SendGrid)
 
-See the comprehensive [Mortgage Assistant Setup Guide](MORTGAGE_ASSISTANT_SETUP.md).
+### 1. Gemini AI Setup
 
-## Testing
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the generated API key
+5. Add it to your `.env.local` file as `GEMINI_API_KEY`
 
-### Run Complete Test Suite
+### 2. Google Calendar API Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable Google Calendar API
+4. Create OAuth 2.0 credentials
+5. Configure authorized redirect URIs
+6. Add credentials to your `.env.local` file
+
+### 3. Email Service Setup
+
+#### Gmail SMTP (Recommended)
+1. Enable 2-factor authentication on your Gmail account
+2. Generate an App Password
+3. Configure SMTP settings in `.env.local`
+
+#### SendGrid (Alternative)
+1. Create a SendGrid account
+2. Generate an API key
+3. Configure SendGrid settings in `.env.local`
+
+### 4. Testing Integrations
+
 ```bash
 # Test all integrations
 node scripts/test-mortgage-assistant.js
-```
 
-### Test Individual Components
-```bash
-# Test Gemini AI
+# Test individual components
 curl -X POST "http://localhost:3000/api/mortgage-assistant/summarize" \
   -H "Content-Type: application/json" \
   -d '{"transcript": "Your meeting transcript here..."}'
 
-# Test Google Calendar
 curl "http://localhost:3000/api/mortgage-assistant/calendar?action=auth"
-
-# Test Email
 curl "http://localhost:3000/api/mortgage-assistant/email?action=test"
 ```
 
@@ -149,30 +173,65 @@ curl "http://localhost:3000/api/mortgage-assistant/email?action=test"
 
 ## Troubleshooting
 
-### Microphone Issues
+### Microphone & Audio Issues
 
-If participants cannot hear your voice:
+#### Common Problems & Solutions
 
-1. **Check Browser Permissions**
-   - Ensure microphone permissions are granted
-   - Try refreshing the page and granting permissions again
+**Issue: Microphone works initially but stops working after a while**
 
-2. **Test Microphone**
-   - Use the "Test Microphone" option in meeting setup
-   - Check browser console for audio debug information
+**Solutions:**
+1. **Clear browser cache and cookies**
+2. **Hard refresh**: Press `Ctrl + F5` (Windows) or `Cmd + Shift + R` (Mac)
+3. **Try incognito/private mode** to test without extensions
+4. **Disable browser extensions** temporarily
+5. **Check browser microphone permissions**
+6. **Reset audio device permissions**
 
-3. **Debug Audio State**
-   - Use the "Debug Audio" option to check:
-     - Available audio devices
-     - Permission states
-     - Stream SDK microphone state
-     - Audio track status
+#### Quick Fixes
 
-4. **Common Solutions**
-   - Clear browser cache and cookies
-   - Try a different browser
-   - Check if microphone is being used by other applications
-   - Verify audio drivers are up to date
+1. **Refresh the page** (`F5` or `Ctrl + R`)
+2. **Click the microphone button** in the meeting room to toggle it off/on
+3. **Check if microphone is muted** (red slash icon)
+4. **Try speaking louder** to trigger audio detection
+
+#### Browser-Specific Solutions
+
+**Chrome:**
+- Go to `chrome://settings/content/microphone`
+- Remove the site from blocked list
+- Allow microphone access
+
+**Firefox:**
+- Go to `about:preferences#privacy`
+- Scroll to Permissions → Microphone
+- Allow microphone access
+
+**Edge:**
+- Go to `edge://settings/content/microphone`
+- Remove the site from blocked list
+- Allow microphone access
+
+#### Advanced Troubleshooting
+
+1. **Audio Device Reset**
+   ```javascript
+   // In browser console (F12)
+   navigator.mediaDevices.getUserMedia({ audio: true })
+     .then(stream => {
+       stream.getTracks().forEach(track => track.stop());
+       console.log('Audio devices reset');
+     })
+     .catch(err => console.error('Error:', err));
+   ```
+
+2. **Check Audio Levels**
+   - **Windows**: Right-click speaker → Open Sound settings → Test microphone
+   - **Mac**: System Preferences → Sound → Input → Test microphone
+
+3. **Browser Console Errors**
+   - **Press F12** to open developer tools
+   - **Check Console tab** for audio-related errors
+   - **Look for permission errors** or device access issues
 
 ### Mortgage Assistant Bot Issues
 
@@ -247,7 +306,7 @@ For issues related to:
 - **Deployment**: Check environment variables and build logs
 - **Authentication**: Verify Clerk configuration
 - **Video**: Ensure Stream Video API keys are correct
-- **Mortgage Assistant Bot**: See [Setup Guide](MORTGAGE_ASSISTANT_SETUP.md)
+- **Mortgage Assistant Bot**: See the setup guide above
 
 ## License
 
