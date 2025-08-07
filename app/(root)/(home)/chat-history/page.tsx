@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { format, formatDistanceToNow } from 'date-fns';
+
+// Force dynamic rendering since this page uses authentication
+export const dynamic = 'force-dynamic';
 import { 
   Search, 
   Filter, 
