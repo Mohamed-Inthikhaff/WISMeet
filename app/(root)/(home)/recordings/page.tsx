@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
+// Force dynamic rendering since this page uses authentication
+export const dynamic = 'force-dynamic';
+
 const PreviousPage = () => {
   const [refreshKey, setRefreshKey] = useState(0);
 
