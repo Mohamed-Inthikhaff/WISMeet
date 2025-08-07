@@ -63,6 +63,13 @@ export class AutomaticSummaryTriggers {
   }
 
   /**
+   * Get meeting ID from config
+   */
+  getMeetingId(): string {
+    return this.config.meetingId;
+  }
+
+  /**
    * Start monitoring all trigger scenarios
    */
   startMonitoring(): void {
