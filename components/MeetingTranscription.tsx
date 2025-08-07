@@ -95,7 +95,7 @@ const MeetingTranscription = ({ meetingId, isActive, onTranscriptUpdate }: Meeti
     else if (!isActive && isRecording) {
       stopTranscription();
     }
-  }, [isActive, onTranscriptUpdate, meetingId]); // Removed isRecording from dependencies
+  }, [isActive, onTranscriptUpdate, meetingId, isRecording]); // Added isRecording to dependencies
 
   // Cleanup on unmount
   useEffect(() => {

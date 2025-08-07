@@ -192,7 +192,7 @@ const MeetingRoom = () => {
     const isHost = localParticipant.userId === call.state.createdBy?.id;
     
     // Only create new triggers if we don't have them or if the meeting ID changed
-    if (!summaryTriggersRef.current || summaryTriggersRef.current.config.meetingId !== call.id) {
+    if (!summaryTriggersRef.current || summaryTriggersRef.current.getMeetingId() !== call.id) {
       console.log('🎯 Setting up comprehensive automatic summary monitoring...', {
         isHost,
         meetingId: call.id,
