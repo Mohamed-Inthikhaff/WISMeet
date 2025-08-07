@@ -77,11 +77,11 @@ if (fs.existsSync('server.js')) {
   console.log('\n❌ server.js not found - required for deployment');
 }
 
-// Check next.config.mjs
-if (fs.existsSync('next.config.mjs')) {
-  console.log('\n✅ Found next.config.mjs');
+// Check next.config.js
+if (fs.existsSync('next.config.js')) {
+  console.log('\n✅ Found next.config.js');
 } else {
-  console.log('\n❌ next.config.mjs not found');
+  console.log('\n❌ next.config.js not found');
 }
 
 // Check Procfile
