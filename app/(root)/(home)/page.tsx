@@ -30,6 +30,9 @@ import {
   TrendingUp
 } from 'lucide-react';
 
+// Force dynamic rendering since this page uses authentication
+export const dynamic = 'force-dynamic';
+
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center min-h-screen">
     <div className="relative">
