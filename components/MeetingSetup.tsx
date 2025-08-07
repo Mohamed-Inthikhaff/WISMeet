@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   DeviceSettings,
   useCall,
@@ -51,6 +51,7 @@ const MeetingSetup = ({
   const [showFeedback, setShowFeedback] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [localVideoElement, setLocalVideoElement] = useState<HTMLVideoElement | null>(null);
+  const setupCompleteRef = useRef(false);
 
   const call = useCall();
 
@@ -669,30 +670,57 @@ const MeetingSetup = ({
       setIsJoining(true);
       setError(null);
 
-      if (participantName) {
-        // Set the participant name and device states in the call metadata
-        await call.join({
-          data: { 
-            custom: {
-              initialCameraEnabled: isCameraEnabled,
-              initialMicEnabled: isMicEnabled,
-              participantName: participantName.trim()
-            }
+      console.log('Starting join process...', {
+        participantName: participantName.trim(),
+        isCameraEnabled,
+        isMicEnabled,
+        callId: call.id
+      });
+
+      // Set the participant name and device states in the call metadata
+      await call.join({
+        data: { 
+          custom: {
+            initialCameraEnabled: isCameraEnabled,
+            initialMicEnabled: isMicEnabled,
+            participantName: participantName.trim()
           }
-        });
-
-        // Set the initial device states
-        if (!isCameraEnabled) {
-          await call.camera.disable();
         }
-        if (!isMicEnabled) {
-          await call.microphone.disable();
-        }
+      });
 
-        // Mark as joined and complete setup
-        setHasJoined(true);
-        setIsSetupComplete(true);
+      console.log('Call joined successfully, setting device states...');
+
+      // Set the initial device states
+      if (!isCameraEnabled) {
+        await call.camera.disable();
+        console.log('Camera disabled');
       }
+      if (!isMicEnabled) {
+        await call.microphone.disable();
+        console.log('Microphone disabled');
+      }
+
+      console.log('Device states set, completing setup...');
+
+      // Mark as joined and complete setup with proper state updates
+      setHasJoined(true);
+      
+      // Use setTimeout to ensure state updates are processed
+      setTimeout(() => {
+        console.log('Setting setup complete...');
+        setupCompleteRef.current = true;
+        setIsSetupComplete(true);
+      }, 100);
+
+      // Fallback: If setup doesn't complete within 5 seconds, force it
+      setTimeout(() => {
+        if (!setupCompleteRef.current) {
+          console.log('Fallback: Forcing setup completion...');
+          setupCompleteRef.current = true;
+          setIsSetupComplete(true);
+        }
+      }, 5000);
+
     } catch (err) {
       console.error('Error joining meeting:', err);
       setError('Failed to join the meeting. Please try again.');
@@ -1269,7 +1297,19 @@ const MeetingSetup = ({
                     onClick={handleJoinMeeting}
                     disabled={!participantName || isJoining || hasJoined}
                   >
-                    {isJoining ? 'Joining...' : hasJoined ? 'Joined' : 'Join Meeting'}
+                    {isJoining ? (
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        Joining...
+                      </div>
+                    ) : hasJoined ? (
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-4 rounded-full bg-green-500" />
+                        Joined
+                      </div>
+                    ) : (
+                      'Join Meeting'
+                    )}
                   </Button>
                     </TooltipTrigger>
                     <TooltipContent className="bg-gray-800 text-white border-gray-700">
@@ -1283,6 +1323,27 @@ const MeetingSetup = ({
                     <p className="text-center text-sm text-gray-400">
                       Please enter your name to join the meeting
                     </p>
+                  )}
+                  {hasJoined && !setupCompleteRef.current && (
+                    <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
+                      <div className="flex items-center gap-3">
+                        <AlertCircle className="h-5 w-5 text-yellow-400" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-yellow-400">Manual Override</p>
+                          <p className="text-xs text-yellow-300 mt-1">
+                            If you&apos;re stuck here, click the button below to proceed to the meeting room.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => setIsSetupComplete(true)}
+                          size="sm"
+                          variant="outline"
+                          className="bg-yellow-800/50 border-yellow-600 text-yellow-200 hover:bg-yellow-700/50 text-xs"
+                        >
+                          Proceed to Meeting
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </motion.div>
               </div>
@@ -1318,7 +1379,26 @@ const MeetingSetup = ({
                     variant="outline"
                     className="bg-blue-800/50 border-blue-600 text-blue-200 hover:bg-blue-700/50 text-xs"
                   >
-                    Debug
+                    Debug Camera
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      console.log('Debug: Current state', {
+                        participantName,
+                        isJoining,
+                        hasJoined,
+                        setupComplete: setupCompleteRef.current,
+                        isCameraEnabled,
+                        isMicEnabled,
+                        callId: call?.id,
+                        callState: call?.state
+                      });
+                    }}
+                    size="sm"
+                    variant="outline"
+                    className="bg-green-800/50 border-green-600 text-green-200 hover:bg-green-700/50 text-xs"
+                  >
+                    Debug State
                   </Button>
                   <Button
                     onClick={() => setError(null)}

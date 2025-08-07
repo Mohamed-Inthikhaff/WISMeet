@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   CallControls,
   CallParticipantsList,
@@ -31,7 +31,7 @@ import MeetingTranscription from './MeetingTranscription';
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
 import { audioMonitor, AudioHealthStatus } from '@/lib/audio-monitor';
-import { createAutomaticSummaryTriggers } from '@/lib/automatic-summary-triggers';
+import { createAutomaticSummaryTriggers, AutomaticSummaryTriggers } from '@/lib/automatic-summary-triggers';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
 
@@ -64,7 +64,7 @@ const MeetingRoom = () => {
   }, [isScreenSharing]);
 
   // Get participants from call state
-  const participants = call?.state.participants || [];
+  const participants = useMemo(() => call?.state.participants || [], [call?.state.participants]);
 
   // Get accurate participant count - Stream SDK already includes local participant
   const participantCount = participants.length;
@@ -182,40 +182,61 @@ const MeetingRoom = () => {
     };
   }, [socket, call, localParticipant]);
 
-  // Comprehensive Automatic Summary Monitoring
+  // Comprehensive Automatic Summary Monitoring - Fixed to prevent repeated setup
+  const summaryTriggersRef = useRef<AutomaticSummaryTriggers | null>(null);
+  const isMonitoringRef = useRef(false);
+
   useEffect(() => {
     if (!call || !localParticipant) return;
 
     const isHost = localParticipant.userId === call.state.createdBy?.id;
     
-    console.log('🎯 Setting up comprehensive automatic summary monitoring...', {
-      isHost,
-      meetingId: call.id,
-      localParticipantId: localParticipant.userId
-    });
+    // Only create new triggers if we don't have them or if the meeting ID changed
+    if (!summaryTriggersRef.current || summaryTriggersRef.current.config.meetingId !== call.id) {
+      console.log('🎯 Setting up comprehensive automatic summary monitoring...', {
+        isHost,
+        meetingId: call.id,
+        localParticipantId: localParticipant.userId
+      });
 
-    // Create automatic summary triggers
-    const automaticSummaryTriggers = createAutomaticSummaryTriggers({
-      meetingId: call.id,
-      call,
-      localParticipant,
-      isHost
-    });
+      // Clean up previous triggers if they exist
+      if (summaryTriggersRef.current) {
+        summaryTriggersRef.current.stopMonitoring();
+      }
 
-    // Start monitoring when call is joined
-    if (callingState === 'joined') {
-      automaticSummaryTriggers.startMonitoring();
+      // Create new automatic summary triggers
+      summaryTriggersRef.current = createAutomaticSummaryTriggers({
+        meetingId: call.id,
+        call,
+        localParticipant,
+        isHost
+      });
+    }
+
+    // Start monitoring only when call is joined and not already monitoring
+    if (callingState === 'joined' && !isMonitoringRef.current) {
+      console.log('🎯 Starting automatic summary monitoring...');
+      summaryTriggersRef.current?.startMonitoring();
+      isMonitoringRef.current = true;
+    } else if (callingState !== 'joined' && isMonitoringRef.current) {
+      console.log('🛑 Stopping automatic summary monitoring due to call state change...');
+      summaryTriggersRef.current?.stopMonitoring();
+      isMonitoringRef.current = false;
     }
 
     // Cleanup on unmount
     return () => {
-      automaticSummaryTriggers.stopMonitoring();
+      if (summaryTriggersRef.current) {
+        console.log('🛑 Cleaning up automatic summary monitoring...');
+        summaryTriggersRef.current.stopMonitoring();
+        isMonitoringRef.current = false;
+      }
     };
   }, [call, localParticipant, callingState]);
 
 
   // Enhanced microphone initialization with better error handling
-  const initializeDevices = async () => {
+  const initializeDevices = useCallback(async () => {
     if (!call || !localParticipant) return;
 
     const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
@@ -264,7 +285,7 @@ const MeetingRoom = () => {
             // Log error for debugging
       console.error('Microphone initialization failed:', error);
     }
-  };
+  }, [call, localParticipant]);
 
   useEffect(() => {
     if (call && localParticipant && !devicesInitialized) {
@@ -276,7 +297,7 @@ const MeetingRoom = () => {
       
       return () => clearTimeout(timer);
     }
-  }, [call, localParticipant, devicesInitialized]);
+  }, [call, localParticipant, devicesInitialized, initializeDevices]);
 
   // Enhanced audio monitoring and recovery mechanism
 

@@ -46,9 +46,9 @@ const MeetingTranscription = ({ meetingId, isActive, onTranscriptUpdate }: Meeti
     };
   }, [meetingId, onTranscriptUpdate]);
 
-  // Start/stop transcription based on meeting state
+  // Start/stop transcription based on meeting state - Fixed to prevent infinite loop
   useEffect(() => {
-    console.log('🔄 MeetingTranscription state changed:', { isActive, isRecording, meetingId });
+    console.log('🔄 MeetingTranscription state changed:', { isActive, meetingId });
     
     const startTranscription = async () => {
       if (!transcriptionServiceRef.current || !isActive) return;
@@ -87,12 +87,15 @@ const MeetingTranscription = ({ meetingId, isActive, onTranscriptUpdate }: Meeti
       }
     };
 
+    // Only start if active and not already recording
     if (isActive && !isRecording) {
       startTranscription();
-    } else if (!isActive && isRecording) {
+    } 
+    // Only stop if not active and currently recording
+    else if (!isActive && isRecording) {
       stopTranscription();
     }
-  }, [isActive, isRecording, onTranscriptUpdate]);
+  }, [isActive, onTranscriptUpdate, meetingId]); // Removed isRecording from dependencies
 
   // Cleanup on unmount
   useEffect(() => {
