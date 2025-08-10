@@ -3,7 +3,14 @@ import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
 import { Meeting, ChatSession } from '@/lib/types/chat';
 
-// GET /api/chat/meetings?userId=xxx&meetingId=xxx
+// Recommended indexes:
+// db.meetings.createIndex({ meetingId: 1 }, { unique: true })
+// db.meetings.createIndex({ hostId: 1, startTime: -1 })
+// db.meetings.createIndex({ participants: 1, startTime: -1 })
+// db.messages.createIndex({ meetingId: 1, timestamp: -1 })
+// db.chat_sessions.createIndex({ meetingId: 1 })
+
+// GET /api/chat/meetings?meetingId=xxx&limit=20
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
@@ -12,9 +19,19 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const queryUserId = searchParams.get('userId') || userId;
-    const meetingId = searchParams.get('meetingId');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    
+    // SECURITY: Ignore ?userId=, always use authenticated userId
+    const queryUserId = userId;
+    
+    // VALIDATION: Sanitize limit
+    const rawLimit = Number(searchParams.get('limit') ?? 20);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 20;
+    
+    // VALIDATION: Validate meetingId
+    const meetingId = searchParams.get('meetingId') ?? null;
+    if (meetingId && (meetingId.length > 128 || !/^[A-Za-z0-9:_\-.]+$/.test(meetingId))) {
+      return NextResponse.json({ error: 'Invalid meetingId' }, { status: 400 });
+    }
 
     const db = await getDb();
     const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
@@ -30,8 +47,11 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
       }
       
-      // Check if user has access to this meeting
-      if (meeting.hostId !== queryUserId && !meeting.participants.includes(queryUserId)) {
+      // ROBUSTNESS: Coalesce participants array
+      const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
+      
+      // Single-meeting access check
+      if (meeting.hostId !== queryUserId && !participants.includes(queryUserId)) {
         return NextResponse.json({ error: 'Access denied' }, { status: 403 });
       }
       
@@ -54,6 +74,14 @@ export async function GET(request: NextRequest) {
         .sort({ startTime: -1 })
         .limit(limit)
         .toArray();
+
+      // PERFORMANCE: Early return if no meetings to avoid $in: [] queries
+      if (meetings.length === 0) {
+        return NextResponse.json({
+          meetings: [],
+          total: 0
+        });
+      }
 
       // Get message counts for all meetings
       const meetingIds = meetings.map(m => m.meetingId);
@@ -83,11 +111,11 @@ export async function GET(request: NextRequest) {
         sessionMap.set(session.meetingId, session);
       });
 
-              // Add chat session info to meetings
-        meetings = meetings.map((meeting: any) => ({
-          ...meeting,
-          chatSession: sessionMap.get(meeting.meetingId) || null
-        }));
+      // CONSISTENCY: Keep chatSession: null if absent
+      meetings = meetings.map((meeting: any) => ({
+        ...meeting,
+        chatSession: sessionMap.get(meeting.meetingId) || null
+      }));
     }
 
     return NextResponse.json({
@@ -112,62 +140,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // VALIDATION: Validate body
     const body = await request.json();
-    const { meetingId, title, participants = [] } = body;
-
-    if (!meetingId || !title) {
-      return NextResponse.json(
-        { error: 'Meeting ID and title are required' },
-        { status: 400 }
-      );
+    const { meetingId, title, participants = [] } = body ?? {};
+    
+    if (typeof meetingId !== 'string' || !meetingId.trim() || meetingId.length > 128 || !/^[A-Za-z0-9:_\-.]+$/.test(meetingId)) {
+      return NextResponse.json({ error: 'Invalid meetingId' }, { status: 400 });
     }
+    
+    if (typeof title !== 'string' || !title.trim()) {
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+    }
+
+    // ROBUSTNESS: Ensure participants is string[] and include host once
+    const uniq = new Set<string>((Array.isArray(participants) ? participants : []).filter(p => typeof p === 'string'));
+    uniq.add(userId);
+    const participantList = Array.from(uniq);
 
     const db = await getDb();
     const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
 
-    // Check if meeting already exists
-    const existingMeeting = await meetingsCollection.findOne({ meetingId });
+    // PERFORMANCE: Use single Mongo upsert for POST
+    const now = new Date();
+    const res = await meetingsCollection.updateOne(
+      { meetingId },
+      {
+        $set: {
+          title: title.trim(),
+          participants: participantList,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          hostId: userId,
+          startTime: now,
+          status: 'active',
+          createdAt: now,
+          recordingId: `recording-${meetingId}-${Date.now()}`,
+        },
+      },
+      { upsert: true }
+    );
 
-    if (existingMeeting) {
-      // Update existing meeting
-      const updateResult = await meetingsCollection.updateOne(
-        { meetingId },
-        {
-          $set: {
-            title,
-            participants: Array.from(new Set([...participants, userId])), // Ensure host is included
-            updatedAt: new Date()
-          }
-        }
-      );
-
-      return NextResponse.json({
-        success: true,
-        meetingId,
-        updated: updateResult.modifiedCount > 0
-      });
-    } else {
-      // Create new meeting
-      const newMeeting: Omit<Meeting, '_id'> = {
-        meetingId,
-        title,
-        hostId: userId,
-        participants: Array.from(new Set([...participants, userId])),
-        startTime: new Date(),
-        status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      const result = await meetingsCollection.insertOne(newMeeting);
-
-      return NextResponse.json({
-        success: true,
-        meetingId,
-        created: true,
-        _id: result.insertedId
-      });
-    }
+    return NextResponse.json({
+      success: true,
+      meetingId,
+      created: res.upsertedCount > 0,
+      updated: res.matchedCount > 0 && res.modifiedCount > 0,
+    });
 
   } catch (error) {
     console.error('Error creating/updating meeting:', error);

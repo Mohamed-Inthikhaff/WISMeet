@@ -1,86 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/mongodb';
 import { auth } from '@clerk/nextjs/server';
-import { GetMessagesRequest, SendMessageRequest, Message } from '@/lib/types/chat';
 
-// GET /api/chat/messages?meetingId=xxx&limit=50&before=timestamp&page=1
+// Recommended indexes:
+// db.messages.createIndex({ meetingId: 1, timestamp: 1 })
+// db.meetings.createIndex({ meetingId: 1 }, { unique: true })
+
+type ChatMessage = {
+  _id?: any;
+  meetingId: string;
+  message: string;
+  messageType: 'user' | 'system';
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  timestamp: Date;
+  reactions: { userId: string; emoji: string }[];
+}
+
+// GET /api/chat/messages?meetingId=xxx&limit=50
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      console.error('Chat messages API: Unauthorized access attempt');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const meetingId = searchParams.get('meetingId');
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const before = searchParams.get('before');
-    const page = parseInt(searchParams.get('page') || '1');
+    const rawLimit = parseInt(searchParams.get('limit') || '50');
 
-    if (!meetingId) {
-      console.error('Chat messages API: Missing meetingId parameter');
-      return NextResponse.json({ error: 'Meeting ID is required' }, { status: 400 });
+    // Validate meetingId
+    if (!meetingId || meetingId.length > 128 || !/^[A-Za-z0-9:_\-.]+$/.test(meetingId)) {
+      return NextResponse.json({ error: 'Invalid meetingId' }, { status: 400 });
     }
 
-    console.log(`Chat messages API: Fetching messages for meeting ${meetingId}, user ${userId}`);
+    // Clamp limit to 1..100
+    const limit = Math.min(Math.max(rawLimit, 1), 100);
 
     const db = await getDb();
     const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
     const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
 
-    // Verify user has access to this meeting
+    // Verify meeting exists and user belongs (hostId or participants includes userId)
     const meeting = await meetingsCollection.findOne({ meetingId });
     if (!meeting) {
-      console.error(`Chat messages API: Meeting ${meetingId} not found`);
       return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
     }
 
-    if (meeting.hostId !== userId && !meeting.participants.includes(userId)) {
-      console.error(`Chat messages API: User ${userId} denied access to meeting ${meetingId}`);
+    const participants: string[] = Array.isArray(meeting.participants) ? meeting.participants : [];
+    if (meeting.hostId !== userId && !participants.includes(userId)) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    // Build query
-    const query: any = { meetingId };
-    if (before) {
-      query.timestamp = { $lt: new Date(before) };
-    }
-
-    // Calculate skip for pagination
-    const skip = (page - 1) * limit;
-
-    // Get total count for pagination
-    const totalCount = await messagesCollection.countDocuments(query);
-    console.log(`Chat messages API: Found ${totalCount} messages for meeting ${meetingId}`);
-
-    // Get messages with pagination
+    // Get messages sorted oldest->newest
     const messages = await messagesCollection
-      .find(query)
-      .sort({ timestamp: -1 }) // Most recent first
-      .skip(skip)
+      .find({ meetingId })
+      .sort({ timestamp: 1 }) // Oldest first
       .limit(limit)
       .toArray();
 
-    // Check if there are more messages
-    const hasMore = skip + messages.length < totalCount;
-    const totalPages = Math.ceil(totalCount / limit);
-
-    console.log(`Chat messages API: Returning ${messages.length} messages for meeting ${meetingId}`);
-
-    return NextResponse.json({
-      messages: messages.reverse(), // Return in chronological order
-      hasMore,
-      total: messages.length,
-      totalCount,
-      pagination: {
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
-      }
-    });
+    return NextResponse.json({ messages });
 
   } catch (error) {
     console.error('Chat messages API: Error fetching messages:', error);
@@ -99,15 +79,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body: SendMessageRequest = await request.json();
-    const { meetingId, message, senderId, senderName, senderAvatar } = body;
+    const body = await request.json();
+    const { 
+      meetingId, 
+      message, 
+      senderId, 
+      senderName, 
+      senderAvatar, 
+      messageType = 'user' 
+    } = body;
 
-    // Validate required fields
-    if (!meetingId || !message || !senderId || !senderName) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+    // Validate meetingId
+    if (!meetingId || meetingId.length > 128 || !/^[A-Za-z0-9:_\-.]+$/.test(meetingId)) {
+      return NextResponse.json({ error: 'Invalid meetingId' }, { status: 400 });
+    }
+
+    // Validate fields (non-empty strings)
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 });
+    }
+
+    if (!senderId || typeof senderId !== 'string' || !senderId.trim()) {
+      return NextResponse.json({ error: 'Sender ID is required' }, { status: 400 });
+    }
+
+    if (!senderName || typeof senderName !== 'string' || !senderName.trim()) {
+      return NextResponse.json({ error: 'Sender name is required' }, { status: 400 });
+    }
+
+    // Validate messageType
+    if (messageType !== 'user' && messageType !== 'system') {
+      return NextResponse.json({ error: 'Invalid messageType' }, { status: 400 });
     }
 
     // Validate that the sender is the authenticated user
@@ -120,30 +122,36 @@ export async function POST(request: NextRequest) {
 
     const db = await getDb();
     const messagesCollection = db.collection(COLLECTIONS.MESSAGES);
+    const meetingsCollection = db.collection(COLLECTIONS.MEETINGS);
+
+    // Verify user belongs to meeting
+    const meeting = await meetingsCollection.findOne({ meetingId });
+    if (!meeting) {
+      return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+    }
+
+    const participants: string[] = Array.isArray(meeting.participants) ? meeting.participants : [];
+    if (meeting.hostId !== userId && !participants.includes(userId)) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
 
     // Create new message
-    const newMessage: Omit<Message, '_id'> = {
+    const newMessage: Omit<ChatMessage, '_id'> = {
       meetingId,
-      senderId,
-      senderName,
-      senderAvatar,
       message: message.trim(),
-      messageType: 'text',
+      messageType,
+      senderId,
+      senderName: senderName.trim(),
+      senderAvatar: senderAvatar?.trim(),
       timestamp: new Date(),
-      isEdited: false,
       reactions: []
     };
 
     const result = await messagesCollection.insertOne(newMessage);
-    const insertedMessage = {
-      ...newMessage,
-      _id: result.insertedId
-    };
 
     return NextResponse.json({
       success: true,
-      messageId: result.insertedId.toString(),
-      message: insertedMessage
+      _id: result.insertedId
     });
 
   } catch (error) {
