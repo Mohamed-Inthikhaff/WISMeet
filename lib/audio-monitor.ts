@@ -20,6 +20,7 @@ export interface AudioRecoveryOptions {
 
 class AudioMonitor {
   private isMonitoring = false;
+  private isInCall = false;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
@@ -31,6 +32,10 @@ class AudioMonitor {
     retryDelay: 2000,
     enableAutoRecovery: true
   };
+
+  public setInCall(value: boolean) {
+    this.isInCall = value;
+  }
 
   constructor(options?: Partial<AudioRecoveryOptions>) {
     if (options) {
@@ -85,6 +90,25 @@ class AudioMonitor {
    * Perform a comprehensive audio health check
    */
   private async performHealthCheck(): Promise<AudioHealthStatus> {
+    // Be passive during a call: do not call getUserMedia() or auto-recovery,
+    // because that can steal the device or fight the SDK.
+    if (this.isInCall) {
+      const status: AudioHealthStatus = {
+        isHealthy: true,                  // assume OK; SDK is in control
+        microphoneEnabled: true,          // we don't inspect; avoid device grabs
+        audioLevel: 0,                    // skip level measurement
+        connectionQuality: 'good',
+        issues: [],
+        lastCheck: new Date(),
+      };
+
+      // Notify listeners *without* triggering recovery
+      if (this.onHealthChange) this.onHealthChange(status);
+
+      // Skip auto recovery entirely while in-call
+      return status;
+    }
+
     const issues: string[] = [];
     let microphoneEnabled = false;
     let audioLevel = 0;
@@ -158,7 +182,7 @@ class AudioMonitor {
     }
 
     // Auto-recovery if enabled
-    if (this.recoveryOptions.enableAutoRecovery && !status.isHealthy) {
+    if (!this.isInCall && this.recoveryOptions.enableAutoRecovery && !status.isHealthy) {
       await this.attemptRecovery(status);
     }
 

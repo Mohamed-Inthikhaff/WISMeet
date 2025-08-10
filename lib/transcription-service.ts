@@ -1,7 +1,49 @@
 /**
- * Real-time Transcription Service
- * Handles audio recording and conversion to text for meeting summaries
+ * Real-time Transcription Service using Web Speech API
+ * Handles speech recognition without MediaStream usage
  */
+
+// Web Speech API types
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message?: string;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
 
 export interface TranscriptionConfig {
   meetingId: string;
@@ -18,172 +60,133 @@ export interface TranscriptionState {
 
 export class TranscriptionService {
   private meetingId: string;
-  private mediaRecorder: MediaRecorder | null = null;
-  private audioChunks: Blob[] = [];
-  private transcript: string = '';
-  private startTime: number = 0;
+  private recognition: SpeechRecognition | null = null;
+  private transcript = '';
+  private isRecording = false;
+  private isStarting = false;
+  private backoffMs = 500;
+  private readonly MAX_BACKOFF = 10000;
   private onTranscriptUpdate?: (transcript: string) => void;
   private onError?: (error: string) => void;
-  private stream: MediaStream | null = null;
-  private isRecording: boolean = false;
-  private recognition: any = null;
+  private startTime = 0;
 
-  constructor(config: TranscriptionConfig) {
-    this.meetingId = config.meetingId;
-    this.onTranscriptUpdate = config.onTranscriptUpdate;
-    this.onError = config.onError;
+  constructor({ meetingId, onTranscriptUpdate, onError }: TranscriptionConfig) {
+    this.meetingId = meetingId;
+    this.onTranscriptUpdate = onTranscriptUpdate;
+    this.onError = onError;
   }
 
-  /**
-   * Start real-time transcription
-   */
-  async startTranscription(): Promise<boolean> {
-    // Prevent multiple simultaneous start attempts
-    if (this.isRecording) {
-      console.log('⚠️ Transcription already in progress, skipping start request');
-      return true;
-    }
+  private ensureRecognizer() {
+    if (this.recognition) return;
+    
+    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) throw new Error('Speech recognition not supported');
+    
+    const rec: SpeechRecognition = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    rec.maxAlternatives = 1;
 
-    try {
-      console.log('🎤 Starting real-time transcription for meeting:', this.meetingId);
-      
-      // Check if Web Speech API is available
-      if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-        console.error('❌ Speech recognition not supported in this browser');
-        throw new Error('Speech recognition not supported in this browser');
+    rec.onresult = (evt: SpeechRecognitionEvent) => {
+      this.backoffMs = 500; // reset backoff on success
+      let final = '';
+      for (let i = evt.resultIndex; i < evt.results.length; i++) {
+        if (evt.results[i].isFinal) {
+          final += evt.results[i][0].transcript + ' ';
+        }
       }
+      if (final) {
+        this.transcript += final;
+        this.onTranscriptUpdate?.(this.transcript);
+      }
+    };
 
-      console.log('✅ Speech recognition API available');
+    rec.onend = () => {
+      this.isRecording = false;
+      // Chrome ends after silence or time; schedule restart if still desired
+      this.scheduleRestart();
+    };
 
-      // Get audio stream
-      console.log('🎙️ Requesting microphone access...');
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 16000
-        },
-        video: false
-      });
+    rec.onerror = (e: SpeechRecognitionErrorEvent) => {
+      this.isRecording = false;
+      if (['network', 'no-speech', 'audio-capture', 'aborted'].includes(e?.error)) {
+        this.scheduleRestart();
+      } else {
+        this.onError?.(`Speech recognition error: ${e?.error ?? 'unknown'}`);
+      }
+    };
 
-      console.log('✅ Microphone access granted, audio tracks:', this.stream.getAudioTracks().length);
+    this.recognition = rec;
+  }
 
-      // Initialize speech recognition
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-      this.recognition = new SpeechRecognition();
-      
-      this.recognition.continuous = true;
-      this.recognition.interimResults = true;
-      this.recognition.lang = 'en-US';
-      this.recognition.maxAlternatives = 1;
+  private scheduleRestart() {
+    if (!this.recognition) return;
+    if (document.hidden) return; // wait until visible
+    if (!this.isRecording) return; // only if caller still wants recording
+    
+    const wait = this.backoffMs;
+    this.backoffMs = Math.min(this.backoffMs * 2, this.MAX_BACKOFF);
+    setTimeout(() => { void this.safeStart(); }, wait);
+  }
 
-      console.log('✅ Speech recognition initialized');
-
-      // Handle recognition results
-      this.recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript + ' ';
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-
-        // Update transcript with final results
-        if (finalTranscript) {
-          this.transcript += finalTranscript;
-          console.log('📝 Transcript updated:', finalTranscript);
-          console.log('📊 Total transcript length:', this.transcript.length);
-          this.onTranscriptUpdate?.(this.transcript);
-        }
-      };
-
-      // Handle recognition errors
-      this.recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
-        this.onError?.(`Speech recognition error: ${event.error}`);
-      };
-
-      // Handle recognition end
-      this.recognition.onend = () => {
-        console.log('🔄 Speech recognition ended');
-        // Only restart if we're still supposed to be recording and haven't been stopped
-        if (this.isRecording && this.recognition) {
-          console.log('🔄 Restarting speech recognition...');
-          try {
-            this.recognition.start();
-          } catch (error) {
-            console.warn('⚠️ Failed to restart speech recognition:', error);
-            // Don't restart again if it fails
-            this.isRecording = false;
-          }
-        }
-      };
-
-      this.startTime = Date.now();
+  private async safeStart(): Promise<boolean> {
+    if (this.isStarting || this.isRecording) return true;
+    this.isStarting = true;
+    
+    try {
+      this.ensureRecognizer();
+      // small delay helps avoid start-after-stop races
+      await new Promise(r => setTimeout(r, 300));
+      this.recognition!.start();
       this.isRecording = true;
-      this.recognition.start();
-
-      console.log('✅ Real-time transcription started successfully');
+      if (!this.startTime) this.startTime = Date.now();
       return true;
+    } catch (err) {
+      this.scheduleRestart();
+      return false;
+    } finally {
+      this.isStarting = false;
+    }
+  }
 
-    } catch (error) {
-      console.error('❌ Failed to start transcription:', error);
-      this.onError?.(`Failed to start transcription: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  async startTranscription(): Promise<boolean> {
+    this.isRecording = true;
+    try {
+      return await this.safeStart();
+    } catch (e: any) {
+      this.onError?.(`Failed to start transcription: ${e?.message ?? 'Unknown error'}`);
+      this.isRecording = false;
       return false;
     }
   }
 
-  /**
-   * Stop transcription and get final transcript
-   */
   async stopTranscription(): Promise<string> {
+    // Caller no longer wants recording
+    this.isRecording = false;
     try {
-      console.log('🛑 Stopping transcription...');
-      
-      if (!this.recognition || !this.isRecording) {
-        console.warn('⚠️ No active transcription to stop');
-        return this.transcript;
+      if (this.recognition) {
+        try { 
+          this.recognition.stop(); 
+        } catch {} // ignore stop errors
       }
-
-      this.isRecording = false;
-      this.recognition.stop();
-
-      // Stop all tracks
-      if (this.stream) {
-        this.stream.getTracks().forEach(track => track.stop());
-        this.stream = null;
-      }
-
-      // Wait for final processing
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      console.log('✅ Transcription stopped, final transcript length:', this.transcript.length);
-      return this.transcript;
-
-    } catch (error) {
-      console.error('❌ Error stopping transcription:', error);
-      this.onError?.(`Failed to stop transcription: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return this.transcript;
+      // give browser a moment to flush final results
+      await new Promise(r => setTimeout(r, 300));
+    } catch (e: any) {
+      this.onError?.(`Failed to stop transcription: ${e?.message ?? 'Unknown error'}`);
     }
+    return this.transcript;
   }
 
-  /**
-   * Get current transcript
-   */
   getTranscript(): string {
     return this.transcript;
   }
 
-  /**
-   * Get transcription state
-   */
+  clearTranscript(): void {
+    this.transcript = '';
+    this.onTranscriptUpdate?.('');
+  }
+
   getState(): TranscriptionState {
     return {
       isRecording: this.isRecording,
@@ -193,19 +196,8 @@ export class TranscriptionService {
     };
   }
 
-  /**
-   * Clear transcript
-   */
-  clearTranscript(): void {
-    this.transcript = '';
-    this.onTranscriptUpdate?.('');
-  }
-
-  /**
-   * Check if speech recognition is supported
-   */
   static isSupported(): boolean {
-    return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+    return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
   }
 }
 

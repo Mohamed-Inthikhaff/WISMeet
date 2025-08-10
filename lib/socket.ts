@@ -143,7 +143,7 @@ class ChatSocketManager {
             senderName,
             senderAvatar,
             message: message.trim(),
-            messageType: 'text',
+            messageType: 'user',
             timestamp: new Date(),
             isEdited: false,
             reactions: []
