@@ -16,17 +16,22 @@ export interface Meeting {
 
 // Message Schema
 export interface Message {
-  _id?: ObjectId;
+  _id?: ObjectId | string; // Allow string for optimistic updates
   meetingId: string; // Reference to meeting
   senderId: string; // Clerk user ID
   senderName: string; // Display name
   senderAvatar?: string; // Profile image URL
   message: string;
-  messageType: 'text' | 'file' | 'system';
-  timestamp: Date;
-  isEdited: boolean;
+  messageType: 'user' | 'system'; // Aligned types
+  timestamp: Date | string;
+  isEdited?: boolean;
   editedAt?: Date;
   reactions: MessageReaction[];
+  // UI-only flags
+  pending?: boolean;
+  failed?: boolean;
+  // temp id for optimistic messages
+  tempId?: string;
 }
 
 // Message Reaction
