@@ -12,100 +12,108 @@ interface MeetingTranscriptionProps {
 
 const MeetingTranscription = ({ meetingId, isActive, onTranscriptUpdate }: MeetingTranscriptionProps) => {
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  
+  // Use refs to guard concurrent start/stop operations
   const transcriptionServiceRef = useRef<TranscriptionService | null>(null);
-
-  // Initialize transcription service
-  useEffect(() => {
-    if (!meetingId) return;
-
-    console.log('🎤 Initializing MeetingTranscription for meeting:', meetingId);
-
-    transcriptionServiceRef.current = createTranscriptionService({
-      meetingId,
-      onTranscriptUpdate: (newTranscript) => {
-        console.log('📝 MeetingTranscription received transcript update:', newTranscript.length, 'characters');
-        setTranscript(newTranscript);
-        transcriptContext.setTranscript(meetingId, newTranscript);
-        onTranscriptUpdate?.(newTranscript);
-      },
-      onError: (errorMessage) => {
-        console.error('❌ MeetingTranscription error:', errorMessage);
-        setError(errorMessage);
-      }
-    });
-
-    console.log('✅ MeetingTranscription service initialized');
-
-    return () => {
-      if (transcriptionServiceRef.current) {
-        console.log('🛑 Cleaning up MeetingTranscription service');
-        transcriptionServiceRef.current.stopTranscription();
-      }
-    };
-  }, [meetingId, onTranscriptUpdate]);
-
-  // Start/stop transcription based on meeting state - Fixed to prevent infinite loop
-  useEffect(() => {
-    console.log('🔄 MeetingTranscription state changed:', { isActive, meetingId });
-    
-    const startTranscription = async () => {
-      if (!transcriptionServiceRef.current || !isActive) return;
-
-      try {
-        console.log('🎤 Starting transcription...');
-        setError(null);
-        const success = await transcriptionServiceRef.current.startTranscription();
-        setIsRecording(success);
-        
-        if (!success) {
-          console.error('❌ Failed to start transcription');
-          setError('Failed to start transcription');
-        } else {
-          console.log('✅ Transcription started successfully');
-        }
-      } catch (error) {
-        console.error('❌ Error starting transcription:', error);
-        setError('Failed to start transcription');
-      }
-    };
-
-    const stopTranscription = async () => {
-      if (!transcriptionServiceRef.current) return;
-
-      try {
-        console.log('🛑 Stopping transcription...');
-        const finalTranscript = await transcriptionServiceRef.current.stopTranscription();
-        setIsRecording(false);
-        setTranscript(finalTranscript);
-        console.log('✅ Transcription stopped, final length:', finalTranscript.length);
-        onTranscriptUpdate?.(finalTranscript);
-      } catch (error) {
-        console.error('❌ Error stopping transcription:', error);
-        setError('Failed to stop transcription');
-      }
-    };
-
-    // Only start if active and not already recording
-    if (isActive && !isRecording) {
-      startTranscription();
-    } 
-    // Only stop if not active and currently recording
-    else if (!isActive && isRecording) {
-      stopTranscription();
-    }
-  }, [isActive, onTranscriptUpdate, meetingId, isRecording]); // Added isRecording to dependencies
+  const isStartingRef = useRef(false);
+  const isStoppingRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const onTranscriptUpdateRef = useRef(onTranscriptUpdate);
+  const mountedRef = useRef(true);
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      if (transcriptionServiceRef.current) {
-        console.log('🛑 MeetingTranscription cleanup on unmount');
-        transcriptionServiceRef.current.stopTranscription();
-      }
+    return () => { 
+      mountedRef.current = false; 
     };
   }, []);
+
+  // Keep latest onTranscriptUpdate in a ref to avoid re-initializing service
+  useEffect(() => {
+    onTranscriptUpdateRef.current = onTranscriptUpdate;
+  }, [onTranscriptUpdate]);
+
+  // Initialize transcription service only when meetingId changes
+  useEffect(() => {
+    if (!meetingId) return;
+
+    // Clean up previous service if it exists
+    transcriptionServiceRef.current?.stopTranscription().catch(() => {});
+    transcriptionServiceRef.current = createTranscriptionService({
+      meetingId,
+      onTranscriptUpdate: (newTranscript) => {
+        transcriptContext.setTranscript(meetingId, newTranscript);
+        onTranscriptUpdateRef.current?.(newTranscript);
+      },
+      onError: (errorMessage) => { 
+        if (mountedRef.current) setError(errorMessage); 
+      }
+    });
+
+    return () => {
+      transcriptionServiceRef.current?.stopTranscription().catch(() => {});
+      transcriptionServiceRef.current = null;
+    };
+  }, [meetingId]);
+
+  // Start/stop transcription based on meeting state with proper guards
+  useEffect(() => {
+    const svc = transcriptionServiceRef.current;
+    if (!svc) return;
+
+    const start = async () => {
+      if (isStartingRef.current || isRecordingRef.current || !isActive) return;
+      isStartingRef.current = true;
+      setError(null);
+      const ok = await svc.startTranscription();
+      if (mountedRef.current && ok) { 
+        setIsRecording(true); 
+        isRecordingRef.current = true; 
+      }
+      isStartingRef.current = false;
+    };
+
+    const stop = async () => {
+      if (isStoppingRef.current || !isRecordingRef.current) return;
+      isStoppingRef.current = true;
+      const finalT = await svc.stopTranscription();
+      if (mountedRef.current) { 
+        setIsRecording(false); 
+        isRecordingRef.current = false; 
+        onTranscriptUpdateRef.current?.(finalT); 
+      }
+      isStoppingRef.current = false;
+    };
+
+    if (isActive) start(); else stop();
+  }, [isActive, meetingId]);
+
+  // Handle visibility changes - pause on hidden, resume on visible
+  useEffect(() => {
+    const onVis = () => {
+      const svc = transcriptionServiceRef.current;
+      if (!svc) return;
+      
+      if (document.hidden) {
+        if (isRecordingRef.current && !isStoppingRef.current) {
+          svc.stopTranscription().catch(() => {});
+        }
+        isRecordingRef.current = false;
+        if (mountedRef.current) setIsRecording(false);
+      } else if (isActive && !isStartingRef.current && !isRecordingRef.current) {
+        svc.startTranscription().then(ok => {
+          if (mountedRef.current && ok) { 
+            setIsRecording(true); 
+            isRecordingRef.current = true; 
+          }
+        }).catch(() => {});
+      }
+    };
+    
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [isActive]);
 
   // Don't render anything visible - this is a background service
   return null;

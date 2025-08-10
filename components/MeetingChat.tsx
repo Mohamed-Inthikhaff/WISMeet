@@ -1,19 +1,13 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useUser } from '@clerk/nextjs';
-import io, { Socket } from 'socket.io-client';
+import { useCallStateHooks, CallingState } from '@stream-io/video-react-sdk';
+import { createSocket } from '@/lib/socket-client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  MessageSquare, 
-  X, 
-  Send, 
-  Smile, 
-  MoreVertical,
-  Clock,
-  User
-} from 'lucide-react';
-import { Message, MessageReaction } from '@/lib/types/chat';
+import { MessageSquare, X, Send, Clock } from 'lucide-react';
+import { Message } from '@/lib/types/chat';
 import { format } from 'date-fns';
+import { logOnce } from '@/lib/logger';
 
 interface MeetingChatProps {
   meetingId: string;
@@ -28,266 +22,211 @@ interface TypingUser {
 
 const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
   const { user } = useUser();
+  const { useCallCallingState } = useCallStateHooks();
+  const callingState = useCallCallingState();
+
+  // Only ready when the panel is open, we have an id, and call is joined
+  const isReady = Boolean(meetingId) && isOpen && callingState === CallingState.JOINED;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [socket, setSocket] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Auto-scroll to bottom when new messages arrive
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // NEW: stable refs to prevent re-init loop
+  const socketRef = useRef<any>(null);
+  const connectedRef = useRef(false);
+  const initRef = useRef<string | null>(null); // meetingId that initialized
+
+  // Scroll on new messages
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  // Load existing messages
+  // Fetch messages (stable version)
   const fetchMessages = useCallback(async () => {
+    if (!meetingId) return;
+    setIsLoading(true);
+    setError(null);
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort('timeout'), 10000);
     try {
-      setIsLoading(true);
-      setError(null); // Clear previous errors
-      
-      const response = await fetch(`/api/chat/messages?meetingId=${meetingId}&limit=50`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch messages: ${response.status}`);
+      const res = await fetch(`/api/chat/messages?meetingId=${encodeURIComponent(meetingId)}&limit=50`, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+    } catch (e) {
+      if ((e as any).name !== 'AbortError') {
+        console.error('fetchMessages failed', e);
+        setError('Failed to load chat history');
       }
-      
-      const data = await response.json();
-      
-      // Filter out duplicate system messages
-      const uniqueMessages = data.messages?.filter((message: Message, index: number, arr: Message[]) => {
-        if (message.messageType === 'system') {
-          // Check if this system message is a duplicate of the previous one
-          const prevMessage = arr[index - 1];
-          return !prevMessage || 
-                 prevMessage.messageType !== 'system' || 
-                 prevMessage.message !== message.message ||
-                 prevMessage.senderId !== message.senderId;
-        }
-        return true;
-      }) || [];
-      
-      setMessages(uniqueMessages);
-    } catch (err) {
-      console.error('Error fetching messages:', err);
-      setError('Failed to load chat history');
     } finally {
+      clearTimeout(timer);
       setIsLoading(false);
     }
   }, [meetingId]);
 
-  // Initialize socket connection
+  // ======= SOCKET INIT (singleton guarded) =======
   useEffect(() => {
-    if (!user || !meetingId) return;
+    const ready = Boolean(meetingId) && isOpen && callingState === CallingState.JOINED;
+    if (!user || !ready) return;
 
-    const newSocket = io(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000', {
-      transports: ['websocket', 'polling'],
-      timeout: 10000, // 10 second timeout
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
-    });
+    // StrictMode / re-render guard
+    if (initRef.current === meetingId && socketRef.current) {
+      return;
+    }
 
-    newSocket.on('connect', () => {
-      console.log('Connected to chat server');
-      setIsConnected(true);
-      setError(null); // Clear any previous errors
-      
-      // Join the meeting room
-      newSocket.emit('join_meeting', {
+    initRef.current = meetingId;
+    const s = createSocket();
+    socketRef.current = s;
+
+    const join = () => {
+      s.emit('join_meeting', {
         meetingId,
         userId: user.id,
-        userName: user.fullName || user.emailAddresses[0].emailAddress
+        userName: user.fullName || user.emailAddresses[0].emailAddress,
       });
-    });
+    };
 
-    newSocket.on('connect_error', (error: Error) => {
-      console.error('Socket connection error:', error);
+    const onConnect = () => {
+      setIsConnected(true);
+      join();
+      void fetchMessages();
+    };
+
+    const onDisconnect = () => setIsConnected(false);
+    const onConnectError = (err:any) => {
+      console.error('socket connect_error', err);
+      setIsConnected(false);
       setError('Failed to connect to chat server');
-      setIsConnected(false);
-    });
+    };
 
-    newSocket.on('disconnect', (reason: string) => {
-      console.log('Disconnected from chat server:', reason);
-      setIsConnected(false);
-      if (reason === 'io server disconnect') {
-        // Server disconnected us, try to reconnect
-        newSocket.connect();
-      }
-    });
-
-    newSocket.on('new_message', (message: Message) => {
-      // Prevent duplicate system messages
-      if (message.messageType === 'system') {
-        setMessages(prev => {
-          // Check if this exact system message already exists
-          const isDuplicate = prev.some(existing => 
-            existing.messageType === 'system' && 
-            existing.message === message.message &&
-            existing.senderId === message.senderId
-          );
-          
-          if (isDuplicate) {
-            console.log('Skipping duplicate system message:', message.message);
-            return prev;
-          }
-          
-          return [...prev, message];
-        });
-      } else {
-        setMessages(prev => [...prev, message]);
-      }
-    });
-
-    newSocket.on('user_typing', (data: { userId: string; userName: string }) => {
-      setTypingUsers(prev => {
-        const existing = prev.find(u => u.userId === data.userId);
-        if (existing) return prev;
-        return [...prev, { userId: data.userId, userName: data.userName }];
+    const handleNewMessage = (serverMsg: Message) => {
+      setMessages(prev => {
+        // de-dupe by _id
+        if (prev.some(m => String(m._id) === String(serverMsg._id))) return prev;
+        // replace optimistic if pending and same text/sender within 5s
+        const idx = prev.findIndex(m =>
+          m.pending &&
+          m.senderId === serverMsg.senderId &&
+          m.message === serverMsg.message &&
+          Math.abs(new Date(m.timestamp).getTime() - new Date(serverMsg.timestamp).getTime()) < 5000
+        );
+        if (idx !== -1) {
+          const clone = [...prev];
+          clone[idx] = { ...serverMsg, pending: false };
+          return clone;
+        }
+        return [...prev, { ...serverMsg, pending: false }];
       });
-    });
+    };
 
-    newSocket.on('user_stopped_typing', (data: { userId: string }) => {
-      setTypingUsers(prev => prev.filter(u => u.userId !== data.userId));
-    });
+    s.on('connect', onConnect);
+    s.on('disconnect', onDisconnect);
+    s.on('connect_error', onConnectError);
+    s.on('new_message', handleNewMessage);
+    s.connect();
 
-    newSocket.on('user_joined', (data: { userId: string; userName: string }) => {
-      // System messages are now handled by the socket server
-      // No need to create duplicate system messages here
-      console.log(`User ${data.userName} joined the meeting`);
-    });
-
-    newSocket.on('user_left', (data: { userId: string; userName: string }) => {
-      // System messages are now handled by the socket server
-      // No need to create duplicate system messages here
-      console.log(`User ${data.userName} left the meeting`);
-    });
-
-    newSocket.on('error', (data: { message: string }) => {
-      setError(data.message);
-    });
-
-    setSocket(newSocket);
-
-    // Load existing messages
-    fetchMessages();
+    // fetch once on open
+    void fetchMessages();
 
     return () => {
-      newSocket.disconnect();
+      // important: don't clear initRef here; keeps StrictMode remount from double-initializing
+      try {
+        s.removeAllListeners();
+        s.disconnect();
+      } catch {}
     };
-  }, [user, meetingId, fetchMessages]);
+  }, [user, isOpen, callingState, meetingId, fetchMessages]);
 
-  // Handle typing indicator
+  // DO NOT: extra fetch on open. (Prevents AbortError spam)
+  // (Removed the old useEffect that fetched again when isOpen changed)
+
+  // Typing indicator with debounce
   const handleTyping = useCallback(() => {
-    if (!socket || !user) return;
+    const s = socketRef.current;
+    if (!s || !user?.id) return;
 
-    // Clear existing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
-    // Emit typing start
-    socket.emit('typing_start', {
+    // Emit start
+    s.emit('typing_start', {
       meetingId,
       userId: user.id,
-      userName: user.fullName || user.emailAddresses[0].emailAddress
+      userName: user.fullName || user.emailAddresses[0]?.emailAddress || 'User'
     });
 
-    // Set timeout to stop typing indicator
+    // Debounced stop
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('typing_stop', { meetingId, userId: user.id });
-    }, 3000);
-  }, [socket, user, meetingId]);
+      s.emit('typing_stop', { meetingId, userId: user.id });
+    }, 1200);
+  }, [meetingId, user?.id]);
 
-  // Send message
-  const sendMessage = useCallback(async () => {
-    if (!newMessage.trim() || !user || !socket) return;
+  // Send message (optimistic)
+  const sendMessage = useCallback(() => {
+    const s = socketRef.current;
+    if (!newMessage.trim() || !user?.id || !meetingId) return;
 
-    const messageData = {
+    const text = newMessage.trim();
+    const tempId = `tmp-${Date.now()}-${Math.random()}`;
+
+    const optimistic: Message = {
+      _id: tempId,
       meetingId,
-      message: newMessage.trim(),
       senderId: user.id,
-      senderName: user.fullName || user.emailAddresses[0].emailAddress,
-      senderAvatar: user.imageUrl
+      senderName: user.fullName || user.emailAddresses[0]?.emailAddress || 'User',
+      senderAvatar: user.imageUrl,
+      message: text,
+      messageType: 'user',
+      timestamp: new Date(),
+      reactions: [],
+      pending: true
     };
 
-    try {
-      // Send via socket for real-time
-      socket.emit('send_message', messageData);
-      
-      // Also save via API for persistence
-      const response = await fetch('/api/chat/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(messageData)
-      });
+    setMessages(prev => [...prev, optimistic]);
+    setNewMessage('');
 
-      if (!response.ok) {
-        throw new Error('Failed to send message');
-      }
-
-      setNewMessage('');
-      
-      // Stop typing indicator
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      socket.emit('typing_stop', { meetingId, userId: user.id });
-      
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message');
+    if (!s || !isConnected) {
+      // Optionally queue if you want offline compose; for now just return.
+      return;
     }
-  }, [newMessage, user, socket, meetingId]);
 
-  // Handle Enter key
-  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+    s.emit('send_message', {
+      meetingId,
+      message: text,
+      senderId: user.id,
+      senderName: user.fullName || user.emailAddresses[0]?.emailAddress || 'User',
+      senderAvatar: user.imageUrl
+    });
+  }, [newMessage, user?.id, meetingId, isConnected]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   }, [sendMessage]);
 
-  // Handle input change with typing indicator
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value);
     handleTyping();
   }, [handleTyping]);
 
-  // Add reaction to message
-  const addReaction = useCallback((messageId: string, emoji: string) => {
-    if (!socket || !user) return;
-    
-    socket.emit('react_to_message', {
-      messageId,
-      userId: user.id,
-      emoji
-    });
-  }, [socket, user]);
+  useEffect(() => () => {
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+  }, []);
 
-  // Format timestamp
-  const formatTime = (timestamp: Date) => {
-    return format(new Date(timestamp), 'HH:mm');
-  };
-
-  // Check if message is from current user
-  const isOwnMessage = (message: Message) => {
-    return message.senderId === user?.id;
-  };
-
-  // Get user initials for avatar
-  const getUserInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  };
+  const keyFor = (m: any, idx: number) => m._id?.toString?.() ?? `${m.senderId}-${m.timestamp ?? idx}-${idx}`;
+  const formatTime = (ts: Date | string) => format(new Date(ts), 'HH:mm');
+  const isOwnMessage = (m: Message) => m.senderId === user?.id;
+  const getUserInitials = (name: string) =>
+    name.split(' ').map(w => w.charAt(0)).join('').toUpperCase().slice(0, 2);
 
   return (
     <AnimatePresence>
@@ -296,146 +235,132 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
           initial={{ x: '100%' }}
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 20, stiffness: 100 }}
-          className="fixed right-0 top-0 bottom-0 z-50 w-full border-l border-gray-800 bg-gray-900/95 backdrop-blur-xl md:relative md:w-80"
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className="fixed inset-y-0 right-0 w-96 bg-gray-900 border-l border-gray-700 shadow-2xl z-50"
         >
-          <div className="flex h-full flex-col">
-            {/* Chat Header */}
-            <div className="flex items-center justify-between border-b border-gray-800 p-4">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-blue-400" />
-                <h2 className="text-lg font-semibold text-white">Meeting Chat</h2>
-                {isConnected && (
-                  <div className="h-2 w-2 rounded-full bg-green-400"></div>
-                )}
-              </div>
-              <button
-                onClick={onClose}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
-                </div>
-              ) : error ? (
-                <div className="text-center py-8">
-                  <p className="text-red-400 text-sm">{error}</p>
-                  <button
-                    onClick={fetchMessages}
-                    className="mt-2 text-blue-400 text-sm hover:underline"
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="text-center py-8">
-                  <MessageSquare className="h-12 w-12 text-gray-500 mx-auto mb-2" />
-                  <p className="text-gray-400 text-sm">No messages yet</p>
-                  <p className="text-gray-500 text-xs mt-1">Start the conversation!</p>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-700">
+            <div className="flex items-center gap-3">
+              <MessageSquare className="h-5 w-5 text-blue-400" />
+              <h3 className="text-white font-semibold">Meeting Chat</h3>
+              {isConnected ? (
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-400">Connected</span>
                 </div>
               ) : (
-                messages.map((message) => (
-                  <div key={message._id?.toString() || `temp-${Date.now()}`} className="flex">
-                    {message.messageType === 'system' ? (
-                      // System message
-                      <div className="w-full text-center">
-                        <span className="inline-block bg-gray-800 text-gray-400 text-xs px-3 py-1 rounded-full">
-                          {message.message}
-                        </span>
-                      </div>
-                    ) : (
-                      // User message
-                      <div className={`flex w-full ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-xs ${isOwnMessage(message) ? 'order-2' : 'order-1'}`}>
-                          {/* Avatar */}
-                          {!isOwnMessage(message) && (
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className="h-6 w-6 rounded-full bg-blue-600 flex items-center justify-center">
-                                <span className="text-xs text-white font-medium">
-                                  {getUserInitials(message.senderName)}
-                                </span>
-                              </div>
-                              <span className="text-xs text-gray-400">{message.senderName}</span>
-                            </div>
-                          )}
-                          
-                          {/* Message bubble */}
-                          <div className={`px-3 py-2 rounded-lg ${
-                            isOwnMessage(message)
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-700 text-white'
-                          }`}>
-                            <p className="text-sm">{message.message}</p>
-                            
-                            {/* Message footer */}
-                            <div className={`flex items-center gap-2 mt-1 ${
-                              isOwnMessage(message) ? 'justify-end' : 'justify-start'
-                            }`}>
-                              <span className="text-xs opacity-70">
-                                {formatTime(message.timestamp)}
-                              </span>
-                              
-                              {/* Reactions */}
-                              {message.reactions.length > 0 && (
-                                <div className="flex gap-1">
-                                  {message.reactions.map((reaction, index) => (
-                                    <span key={index} className="text-xs bg-gray-800 px-1 rounded">
-                                      {reaction.emoji}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-              
-              {/* Typing indicators */}
-              {typingUsers.length > 0 && (
-                <div className="flex items-center gap-2 text-gray-400 text-sm">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  </div>
-                  <span>{typingUsers.map(u => u.userName).join(', ')} typing...</span>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-400">Connecting…</span>
                 </div>
               )}
-              
-              <div ref={messagesEndRef} />
             </div>
+            <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded-md transition-colors">
+              <X className="h-5 w-5 text-gray-400" />
+            </button>
+          </div>
 
-            {/* Message Input */}
-            <div className="border-t border-gray-800 p-4">
-              <div className="flex items-center gap-2">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={newMessage}
-                  onChange={handleInputChange}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Type a message..."
-                  className="flex-1 px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
-                  disabled={!isConnected}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!newMessage.trim() || !isConnected}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="h-4 w-4" />
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {!isConnected && !error && (
+              <div className="px-4 py-2 text-xs text-gray-400">Connecting to chat…</div>
+            )}
+
+            {isLoading && !error ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <p className="text-red-400 text-sm">{error}</p>
+                <button onClick={fetchMessages} className="mt-2 text-blue-400 text-sm hover:underline">
+                  Retry
                 </button>
               </div>
+            ) : messages.length === 0 ? (
+              <div className="text-center py-8">
+                <MessageSquare className="h-12 w-12 text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-400 text-sm">No messages yet</p>
+                <p className="text-gray-500 text-xs mt-1">Start the conversation!</p>
+              </div>
+            ) : (
+              messages.map((message, index) => (
+                <div key={keyFor(message, index)} className={`flex gap-3 ${isOwnMessage(message) ? 'flex-row-reverse' : ''}`}>
+                  {/* Avatar */}
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+                    isOwnMessage(message) ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'
+                  }`}>
+                    {message.senderAvatar ? (
+                      <img src={message.senderAvatar} alt={message.senderName} className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      getUserInitials(message.senderName)
+                    )}
+                  </div>
+
+                  {/* Message Content */}
+                  <div className={`flex-1 max-w-[70%] ${isOwnMessage(message) ? 'text-right' : ''}`}>
+                    {message.messageType === 'system' ? (
+                      <div className="text-center py-2">
+                        <span className="text-xs text-gray-500 bg-gray-800 px-3 py-1 rounded-full">{message.message}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className={`text-xs text-gray-400 mb-1 ${isOwnMessage(message) ? 'text-right' : ''}`}>
+                          {message.senderName}
+                        </div>
+                        <div className={`rounded-lg px-3 py-2 ${
+                          isOwnMessage(message) ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200'
+                        } ${message.failed ? 'opacity-50' : message.pending ? 'opacity-75' : ''}`}>
+                          <p className="text-sm">{message.message}</p>
+                          {message.failed && <p className="text-xs text-red-300 mt-1">Failed to send</p>}
+                          {message.pending && !message.failed && <p className="text-xs text-blue-300 mt-1">Sending...</p>}
+                        </div>
+                        <div className={`text-xs text-gray-500 mt-1 flex items-center gap-1 ${isOwnMessage(message) ? 'justify-end' : ''}`}>
+                          <Clock className="h-3 w-3" />
+                          {formatTime(message.timestamp)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Typing Indicator */}
+          {typingUsers.length > 0 && (
+            <div className="px-4 py-2">
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                </div>
+                <span>{typingUsers.map(u => u.userName).join(', ')} typing...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="p-4 border-t border-gray-700">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Type a message..."
+                className="flex-1 bg-gray-800 text-white placeholder-gray-400 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={!meetingId}  // allow typing even if socket connecting
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!newMessage.trim() || !isConnected}
+                className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </motion.div>
@@ -444,4 +369,4 @@ const MeetingChat = ({ meetingId, isOpen, onClose }: MeetingChatProps) => {
   );
 };
 
-export default MeetingChat; 
+export default MeetingChat;

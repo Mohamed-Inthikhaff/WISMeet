@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import Image from "next/image";
 import { motion, AnimatePresence } from 'framer-motion';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { X } from 'lucide-react';
 
 interface MeetingModalProps {
   isOpen: boolean;
@@ -37,11 +38,15 @@ const MeetingModal = ({
   description,
 }: MeetingModalProps) => {
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] border-none bg-transparent p-0">
-        <DialogTitle className="sr-only">{title}</DialogTitle>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent 
+        className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] border-none bg-transparent p-0"
+        aria-labelledby="modal-title"
+        aria-describedby="modal-description"
+      >
+        <DialogTitle id="modal-title" className="sr-only">{title}</DialogTitle>
         {description && (
-          <DialogDescription className="sr-only">{description}</DialogDescription>
+          <DialogDescription id="modal-description" className="sr-only">{description}</DialogDescription>
         )}
         
         <motion.div
@@ -58,6 +63,15 @@ const MeetingModal = ({
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5" />
           <div className="absolute top-0 right-0 h-[500px] w-[500px] bg-blue-500/10 blur-[100px] rounded-full" />
           <div className="absolute bottom-0 left-0 h-[500px] w-[500px] bg-purple-500/10 blur-[100px] rounded-full" />
+          
+          {/* Close Button - Always Visible */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 z-20 rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            aria-label="Close modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
           
           <div className="relative z-10">
             {/* Header */}
@@ -81,15 +95,18 @@ const MeetingModal = ({
                 transition={{ delay: 0.2 }}
                 className="space-y-3 text-center"
               >
-                <h2 className={cn(
-                  "text-3xl font-bold leading-tight",
-                  "bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent",
-                  className
-                )}>
+                <h2 
+                  id="modal-title"
+                  className={cn(
+                    "text-3xl font-bold leading-tight",
+                    "bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent",
+                    className
+                  )}
+                >
                   {title}
                 </h2>
                 {description && (
-                  <p className="text-gray-400">{description}</p>
+                  <p id="modal-description" className="text-gray-400">{description}</p>
                 )}
               </motion.div>
             </div>

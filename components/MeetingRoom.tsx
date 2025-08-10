@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, LayoutList, X, ChevronLeft, Video, VideoOff, Mic, MicOff, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUser } from '@clerk/nextjs';
-import io from 'socket.io-client';
+import { createSocket } from '@/lib/socket-client';
 
 import {
   DropdownMenu,
@@ -51,10 +51,22 @@ const MeetingRoom = () => {
   const localParticipant = useLocalParticipant();
   const call = useCall();
   
-  // Check if any participant is screen sharing
-  const isScreenSharing = call?.state.participants.some(
-    participant => participant.publishedTracks.includes('screen' as any)
-  ) || false;
+  const meetingId = call?.id || '';
+  const readyForRoomSocket = callingState === CallingState.JOINED && Boolean(meetingId);
+  
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+  
+  // Check if any participant is screen sharing - use Stream's official selector if available
+  const isScreenSharing = useMemo(() => {
+    if (!call?.state.participants) return false;
+    
+    return call.state.participants.some(participant => {
+      // Use Stream's publishedTracks to check for screen sharing
+      const publishedTracks = participant.publishedTracks || [];
+      return publishedTracks.includes('screen' as any);
+    });
+  }, [call?.state.participants]);
   
   // Debug log for screen sharing detection
   useEffect(() => {
@@ -80,37 +92,52 @@ const MeetingRoom = () => {
       localParticipant: localParticipant ? { id: localParticipant.userId, name: localParticipant.name } : null,
       isLocalParticipantIncluded: participants.some(p => p.userId === localParticipant?.userId)
     });
-  }, [participantCount, participants, localParticipant]); // Include all dependencies for accurate logging
+  }, [participantCount, participants, localParticipant]);
 
-  // Initialize socket connection for participant sync
+  // Gate socket by readiness - only connect when call is joined and meetingId exists
   useEffect(() => {
-    if (!user || !call?.id) return;
+    if (!user || !readyForRoomSocket) return;
 
-    const newSocket = io(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000', {
-      transports: ['websocket', 'polling']
-    });
+    const s = createSocket();
 
-    newSocket.on('connect', () => {
-      console.log('MeetingRoom: Connected to socket server');
+    const handleConnect = () => {
+      console.log('MeetingRoom: Socket connected');
       
       // Join the meeting room for participant sync
-      newSocket.emit('join_meeting', {
-        meetingId: call.id,
+      s.emit('join_meeting', {
+        meetingId,
         userId: user.id,
         userName: user.fullName || user.emailAddresses[0].emailAddress
       });
-    });
-
-    newSocket.on('disconnect', () => {
-      console.log('MeetingRoom: Disconnected from socket server');
-    });
-
-    setSocket(newSocket);
-
-    return () => {
-      newSocket.disconnect();
     };
-  }, [user, call?.id]);
+
+    const handleConnectError = (err: any) => {
+      console.error('MeetingRoom: Socket connect_error', err);
+    };
+
+    const handleDisconnect = (reason: string) => {
+      console.log('MeetingRoom: Socket disconnected', reason);
+    };
+
+    // Register event handlers
+    s.on('connect', handleConnect);
+    s.on('connect_error', handleConnectError);
+    s.on('disconnect', handleDisconnect);
+
+    // Connect manually when ready
+    s.connect();
+    setSocket(s);
+
+    // Cleanup function
+    return () => {
+      s.off('connect', handleConnect);
+      s.off('connect_error', handleConnectError);
+      s.off('disconnect', handleDisconnect);
+      s.removeAllListeners();
+      s.disconnect();
+      setSocket(null);
+    };
+  }, [user, readyForRoomSocket, meetingId]);
 
   // Sync participant status changes with socket system
   useEffect(() => {
@@ -214,11 +241,11 @@ const MeetingRoom = () => {
     }
 
     // Start monitoring only when call is joined and not already monitoring
-    if (callingState === 'joined' && !isMonitoringRef.current) {
+    if (callingState === CallingState.JOINED && !isMonitoringRef.current) {
       console.log('🎯 Starting automatic summary monitoring...');
       summaryTriggersRef.current?.startMonitoring();
       isMonitoringRef.current = true;
-    } else if (callingState !== 'joined' && isMonitoringRef.current) {
+    } else if (callingState !== CallingState.JOINED && isMonitoringRef.current) {
       console.log('🛑 Stopping automatic summary monitoring due to call state change...');
       summaryTriggersRef.current?.stopMonitoring();
       isMonitoringRef.current = false;
@@ -234,56 +261,27 @@ const MeetingRoom = () => {
     };
   }, [call, localParticipant, callingState]);
 
-
   // Enhanced microphone initialization with better error handling
   const initializeDevices = useCallback(async () => {
     if (!call || !localParticipant) return;
 
-    const initialCameraEnabled = call.state.custom?.initialCameraEnabled;
-    const initialMicEnabled = call.state.custom?.initialMicEnabled;
-
-    console.log('🎤 Initializing devices with settings:', {
-      initialCameraEnabled,
-      initialMicEnabled
-    });
+    const micOn = !!call.state.custom?.initialMicEnabled;
+    const camOn = !!call.state.custom?.initialCameraEnabled;
 
     try {
-      // First, check if we can access the microphone at all
-      const testStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000,
-          channelCount: 1,
-        },
-        video: false
-      });
-
-      // Check if we got audio tracks
-      const audioTracks = testStream.getAudioTracks();
-      if (audioTracks.length === 0) {
-        throw new Error('No audio tracks available');
+      if (micOn) {
+        await call.microphone.enable();
+      } else {
+        await call.microphone.disable();
       }
 
-      // Clean up test stream
-      testStream.getTracks().forEach(track => track.stop());
-
-      // Now enable microphone with Stream SDK
-      await call.microphone.enable();
-      console.log('✅ Microphone enabled successfully');
-
-      // Enable camera if needed
-      if (initialCameraEnabled) {
+      if (camOn) {
         await call.camera.enable();
-        console.log('✅ Camera enabled successfully');
+      } else {
+        await call.camera.disable();
       }
-
-    } catch (error) {
-      console.error('❌ Device initialization failed:', error);
-      
-            // Log error for debugging
-      console.error('Microphone initialization failed:', error);
+    } catch (err) {
+      console.error('Device initialization failed:', err);
     }
   }, [call, localParticipant]);
 
@@ -299,49 +297,15 @@ const MeetingRoom = () => {
     }
   }, [call, localParticipant, devicesInitialized, initializeDevices]);
 
-  // Enhanced audio monitoring and recovery mechanism
-
-
-  // Audio health check and recovery
-
-
+  // Inform audio monitor that we are inside a joined call
   useEffect(() => {
-    if (!call) return;
-    let failCount = 0;
-    let stopped = false;
-
-    const checkAudio = async () => {
-      if (stopped) return;
-      try {
-        // Try to get a new audio stream
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: false
-        });
-        stream.getTracks().forEach(track => track.stop());
-        failCount = 0;
-
-      } catch (err) {
-        failCount++;
-        // Try to recover by toggling mic
-        try {
-          await call.microphone.disable();
-          await new Promise(resolve => setTimeout(resolve, 500));
-          await call.microphone.enable();
-        } catch (sdkErr) {
-          // Ignore SDK errors
-        }
-        if (failCount >= 3) {
-          console.warn('Microphone/audio lost. Please check your device or leave and rejoin the meeting.');
-        }
-      }
-    };
-    const interval = setInterval(checkAudio, 15000);
-    return () => {
-      stopped = true;
-      clearInterval(interval);
-    };
-  }, [call]);
+    if (callingState === CallingState.JOINED) {
+      audioMonitor.setInCall(true);
+    } else {
+      audioMonitor.setInCall(false);
+    }
+    return () => audioMonitor.setInCall(false);
+  }, [callingState]);
 
 
   if (callingState !== CallingState.JOINED) {
@@ -501,7 +465,6 @@ const MeetingRoom = () => {
 
 
 
-
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg bg-gray-800 px-3 py-2 text-white transition-colors hover:bg-gray-700 md:px-4">
             <LayoutList className="h-5 w-5" />
@@ -554,7 +517,7 @@ const MeetingRoom = () => {
       {/* Real-time transcription service */}
       <MeetingTranscription
         meetingId={call?.id || ''}
-        isActive={callingState === 'joined'}
+        isActive={callingState === CallingState.JOINED}
         onTranscriptUpdate={setMeetingTranscript}
       />
 

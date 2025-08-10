@@ -40,7 +40,7 @@ const MeetingSetup = ({
   const [participantName, setParticipantName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [isCameraEnabled, setIsCameraEnabled] = useState(false); // Start with camera disabled
+  const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [isMicEnabled, setIsMicEnabled] = useState(true);
   const [noiseCancellationEnabled, setNoiseCancellationEnabled] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
@@ -49,11 +49,17 @@ const MeetingSetup = ({
   const [cameraDropdownOpen, setCameraDropdownOpen] = useState(false);
   const [lastAction, setLastAction] = useState<string>('');
   const [showFeedback, setShowFeedback] = useState(false);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [localVideoElement, setLocalVideoElement] = useState<HTMLVideoElement | null>(null);
+  
   const setupCompleteRef = useRef(false);
 
+  // --- Preview-only camera refs (do NOT reuse in room) ---
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
+
   const call = useCall();
+  const { useCallCallingState } = useCallStateHooks();
+  const callingState = useCallCallingState();
+  const joinOnceRef = useRef(false);
 
   if (!call) {
     throw new Error(
@@ -61,673 +67,138 @@ const MeetingSetup = ({
     );
   }
 
-  // Properly stop camera stream to release hardware
-  const stopCameraStream = useCallback(async () => {
-    try {
-      // Stop our managed camera stream
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(track => {
-          if (track.kind === 'video') {
-            track.stop(); // This properly stops the media stream and releases the camera
-          }
-        });
-        setCameraStream(null);
-      }
-      
-      // Clear the video element source
-      if (localVideoElement) {
-        localVideoElement.srcObject = null;
-      }
-      
-      // Force stop any remaining camera streams by accessing all video elements
-      try {
-        // Find all video elements and stop their streams
-        const videoElements = document.querySelectorAll('video');
-        videoElements.forEach(video => {
-          if (video.srcObject) {
-            const stream = video.srcObject as MediaStream;
-            stream.getTracks().forEach(track => {
-              if (track.kind === 'video') {
-                track.stop();
-              }
-            });
-            video.srcObject = null;
-          }
-        });
-        console.log('All camera streams stopped and hardware released');
-      } catch (err) {
-        console.log('Camera cleanup completed');
-      }
-    } catch (err) {
-      console.error('Error stopping camera stream:', err);
-    }
-  }, [cameraStream, localVideoElement]);
 
-  // Properly start camera stream with better error handling
-  const startCameraStream = useCallback(async () => {
+
+  // Setup completion effect
+  useEffect(() => {
+    // Only transition when the SDK actually reports joined
+    if (callingState === 'joined') {
+      setIsSetupComplete(true);
+    }
+  }, [callingState, setIsSetupComplete]);
+
+  // Start preview stream
+  const startPreview = useCallback(async () => {
+    // if already running, do nothing
+    if (previewStreamRef.current) return previewStreamRef.current;
+
     try {
-      console.log('Requesting camera permissions...');
-      
-      // Clear any existing error first
       setError(null);
-      
-      // Ensure video element is ready
-      if (!localVideoElement) {
-        console.log('Video element not ready, waiting...');
-        // Wait for video element to be available
-        let attempts = 0;
-        while (!localVideoElement && attempts < 10) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-        
-        if (!localVideoElement) {
-          throw new Error('Video element not available');
-        }
-      }
-      
-      // Request camera stream with simpler constraints first
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          facingMode: 'user'
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user',
         },
-        audio: false 
+        audio: false,
       });
-      
-      console.log('Camera stream obtained successfully');
-      setCameraStream(stream);
-      
-      // Connect the stream to our video element
-      if (localVideoElement) {
-        localVideoElement.srcObject = stream;
-        try {
-          await localVideoElement.play();
-          console.log('Video element connected and playing');
-        } catch (playErr) {
-          console.error('Error playing video:', playErr);
-          // Don't throw here, the stream is still valid
-        }
+
+      previewStreamRef.current = stream;
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = stream;
+        await previewVideoRef.current.play().catch(() => {});
       }
-      
       return stream;
-    } catch (err) {
-      console.error('Error starting camera stream:', err);
-      setCameraStream(null); // Clear any partial stream
-      
-      if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          setError('Camera access denied. Please allow camera permissions in your browser settings and try again.');
-        } else if (err.name === 'NotFoundError') {
-          setError('No camera found. Please check your device and try again.');
-        } else if (err.name === 'NotReadableError') {
-          setError('Camera is in use by another application. Please close other apps and try again.');
-        } else if (err.name === 'AbortError') {
-          setError('Camera request was cancelled. Please try again.');
-        } else if (err.name === 'NotSupportedError') {
-          setError('Camera not supported in this browser. Please try a different browser.');
-        } else {
-          setError(`Camera error: ${err.message}. Please try again.`);
-        }
-      } else {
-        setError('Camera access failed. Please check permissions and try again.');
-      }
-      throw err;
+    } catch (e: any) {
+      previewStreamRef.current = null;
+      // map common errors to friendly text
+      const name = e?.name;
+      if (name === 'NotAllowedError') setError('Camera permission denied. Allow access to see the preview.');
+      else if (name === 'NotFoundError') setError('No camera found on this device.');
+      else if (name === 'NotReadableError') setError('Camera is in use by another application.');
+      else setError(e?.message || 'Failed to start camera preview.');
+      throw e;
     }
-  }, [localVideoElement]);
+  }, [setError]);
 
-  // Update video element when camera stream changes
-  useEffect(() => {
-    if (localVideoElement && cameraStream) {
-      localVideoElement.srcObject = cameraStream;
-      
-      // Ensure video plays
-      localVideoElement.play().catch(err => {
-        console.error('Error playing video:', err);
-      });
-    } else if (localVideoElement && !cameraStream) {
-      localVideoElement.srcObject = null;
+  // Stop preview stream and release the camera
+  const stopPreview = useCallback(async () => {
+    if (previewStreamRef.current) {
+      previewStreamRef.current.getTracks().forEach(t => t.stop());
+      previewStreamRef.current = null;
     }
-  }, [localVideoElement, cameraStream]);
-
-  // Initialize devices with proper permission handling and noise cancellation
-  const initializeDevices = useCallback(async () => {
-    try {
-      console.log('Initializing devices with settings:', { isMicEnabled, isCameraEnabled });
-      
-      // Request microphone permissions first
-      if (isMicEnabled) {
-        try {
-          // Test microphone access before enabling with Stream
-          const audioStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
-            video: false 
-          });
-          
-          console.log('Microphone permissions granted, enabling with Stream SDK');
-          
-          // Enable microphone with Stream's built-in audio handling
-          await call.microphone.enable();
-          console.log('Microphone enabled successfully with Stream SDK');
-          
-          // Verify the audio track is active
-          const audioTracks = audioStream.getAudioTracks();
-          if (audioTracks.length > 0 && audioTracks[0].enabled) {
-            console.log('Audio track verified as active');
-          } else {
-            console.warn('Audio track not properly enabled');
-          }
-          
-          // Stop the test stream after verification
-          audioStream.getTracks().forEach(track => track.stop());
-          
-        } catch (audioErr) {
-          console.error('Failed to get microphone permissions:', audioErr);
-          setError('Microphone access denied. Please allow microphone permissions and refresh the page.');
-          setIsMicEnabled(false);
-          return;
-        }
-      } else {
-        await call.microphone.disable();
-        console.log('Microphone disabled');
-      }
-      
-      // Don't auto-start camera - wait for user interaction
-      if (!isCameraEnabled) {
-        await stopCameraStream();
-      }
-    } catch (err) {
-      console.error('Error initializing devices:', err);
-      setError('Failed to initialize devices. Please check permissions and refresh the page.');
+    if (previewVideoRef.current) {
+      previewVideoRef.current.srcObject = null;
     }
-  }, [isMicEnabled, call.microphone, isCameraEnabled, stopCameraStream]);
-
-  useEffect(() => {
-    initializeDevices();
-  }, [initializeDevices]);
-
-  // Initialize camera only when user first enables it
-  const initializeCamera = useCallback(() => {
-    if (isCameraEnabled && !cameraStream) {
-      // Add a small delay to ensure video element is ready
-      const timer = setTimeout(async () => {
-        try {
-          await startCameraStream();
-        } catch (err) {
-          console.error('Error starting camera on enable:', err);
-          // Don't set error here - let the toggle function handle it
-        }
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-    return () => {}; // Return empty cleanup function when conditions aren't met
-  }, [isCameraEnabled, cameraStream, startCameraStream]);
-
-  useEffect(() => {
-    const cleanup = initializeCamera();
-    return cleanup;
-  }, [initializeCamera]);
-
-  // Cleanup camera stream on unmount
-  useEffect(() => {
-    return () => {
-      stopCameraStream();
-    };
-  }, [stopCameraStream]);
-
-  // Monitor controls visibility
-  const checkControlsVisibility = useCallback(() => {
-    const micControls = document.querySelectorAll('[data-testid="mic-controls"]');
-    const cameraControls = document.querySelectorAll('[data-testid="camera-controls"]');
-    
-    // Only log if there are issues
-    if (micControls.length === 0 || cameraControls.length === 0) {
-      console.log('Controls visibility issue detected:', {
-        micControls: micControls.length,
-        cameraControls: cameraControls.length,
-        cameraEnabled: isCameraEnabled,
-        micEnabled: isMicEnabled
-      });
-    }
-  }, [isCameraEnabled, isMicEnabled]);
-
-  useEffect(() => {
-    checkControlsVisibility();
-  }, [checkControlsVisibility]);
-
-  // Handle camera toggle with better error handling and retry
-  const toggleCamera = async () => {
-    try {
-      // Clear any previous errors
-      setError(null);
-      
-      if (isCameraEnabled) {
-        console.log('Turning camera OFF...');
-        
-        // Stop camera stream directly to release hardware
-        await stopCameraStream();
-        
-        setIsCameraEnabled(false);
-        setLastAction('Camera turned off');
-        setShowFeedback(true);
-        setTimeout(() => setShowFeedback(false), 2000);
-      } else {
-        console.log('Turning camera ON...');
-        
-        // Check if we have camera permissions first (optional check)
-        try {
-          const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
-          
-          if (permissions.state === 'denied') {
-            setError('Camera access denied. Please allow camera permissions in your browser settings and try again.');
-            return;
-          }
-        } catch (permErr) {
-          console.log('Permission query not supported, proceeding with camera request');
-        }
-        
-        // Start camera stream directly
-        const stream = await startCameraStream();
-        if (stream) {
-        setIsCameraEnabled(true);
-          setLastAction('Camera turned on');
-          setShowFeedback(true);
-          setTimeout(() => setShowFeedback(false), 2000);
-        } else {
-          setError('Failed to start camera. Please check permissions and try again.');
-        }
-      }
-    } catch (err) {
-      console.error('Error toggling camera:', err);
-      
-      // Don't change the camera enabled state on error
-      // This allows the user to retry
-      
-      if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          setError('Camera access denied. Please allow camera permissions and try again.');
-        } else if (err.name === 'NotFoundError') {
-          setError('No camera found. Please check your device and try again.');
-        } else if (err.name === 'NotReadableError') {
-          setError('Camera is in use by another application. Please close other apps and try again.');
-        } else if (err.name === 'NotSupportedError') {
-          setError('Camera not supported in this browser. Please try a different browser.');
-        } else {
-          setError(`Camera error: ${err.message}. Please try again.`);
-        }
-      } else {
-        setError('Failed to toggle camera. Please check permissions and try again.');
-      }
-    }
-  };
-
-  // Handle camera permission recovery
-  const handleCameraPermissionRecovery = async () => {
-    try {
-      setError(null);
-      
-      // Stop any existing stream first
-      await stopCameraStream();
-      
-      // Wait a moment for cleanup
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Try to request permissions again with simpler constraints
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        },
-        audio: false 
-      });
-      
-      if (stream) {
-        setCameraStream(stream);
-        setIsCameraEnabled(true);
-        setLastAction('Camera enabled');
-        setShowFeedback(true);
-        setTimeout(() => setShowFeedback(false), 2000);
-        
-        // Connect to video element
-        if (localVideoElement) {
-          localVideoElement.srcObject = stream;
-          try {
-            await localVideoElement.play();
-          } catch (playErr) {
-            console.error('Error playing video after recovery:', playErr);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Camera permission recovery failed:', err);
-      
-      if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          setError('Camera access still denied. Please check browser settings and try again.');
-        } else if (err.name === 'NotFoundError') {
-          setError('No camera found. Please check your device and try again.');
-        } else if (err.name === 'NotReadableError') {
-          setError('Camera is in use by another application. Please close other apps and try again.');
-        } else {
-          setError(`Camera recovery failed: ${err.message}. Please try again.`);
-        }
-      } else {
-        setError('Camera access still denied. Please check browser settings and try again.');
-      }
-    }
-  };
-
-  // Debug camera state
-  const debugCameraState = () => {
-    console.log('=== Camera Debug Info ===');
-    console.log('Camera enabled:', isCameraEnabled);
-    console.log('Camera stream exists:', !!cameraStream);
-    console.log('Video element exists:', !!localVideoElement);
-    console.log('Error state:', error);
-    console.log('Join state:', { isJoining, hasJoined });
-    
-    if (cameraStream) {
-      console.log('Camera tracks:', cameraStream.getTracks().map(t => ({
-        kind: t.kind,
-        enabled: t.enabled,
-        readyState: t.readyState
-      })));
-    }
-    
-    if (localVideoElement) {
-      console.log('Video element ready state:', localVideoElement.readyState);
-      console.log('Video element src object:', !!localVideoElement.srcObject);
-    }
-    
-    // Check permissions
-    navigator.permissions.query({ name: 'camera' as PermissionName })
-      .then(permission => {
-        console.log('Camera permission state:', permission.state);
-      })
-      .catch(err => {
-        console.log('Permission query failed:', err);
-      });
-  };
-
-  // Reset join state when component unmounts
-  useEffect(() => {
-    return () => {
-      setIsJoining(false);
-      setHasJoined(false);
-    };
   }, []);
 
-  // Test microphone function
-  const testMicrophone = async () => {
+  const toggleCamera = async () => {
     try {
-      console.log('Testing microphone...');
-      
-      // Get microphone permissions
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false 
-      });
-      
-      console.log('Microphone test successful:', {
-        trackCount: stream.getTracks().length,
-        audioTracks: stream.getAudioTracks().length,
-        trackEnabled: stream.getAudioTracks()[0]?.enabled,
-        trackId: stream.getAudioTracks()[0]?.id,
-        trackLabel: stream.getAudioTracks()[0]?.label,
-        trackReadyState: stream.getAudioTracks()[0]?.readyState
-      });
-      
-      // Test audio levels
-      const audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(stream);
-      const analyser = audioContext.createAnalyser();
-      source.connect(analyser);
-      
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(dataArray);
-      
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      console.log('Audio level test:', { average, hasAudio: average > 0 });
-      
-      // Stop the test stream
-      stream.getTracks().forEach(track => track.stop());
-      audioContext.close();
-      
-      setLastAction('Microphone test successful');
-      setShowFeedback(true);
-      setTimeout(() => setShowFeedback(false), 2000);
-      
-    } catch (err) {
-      console.error('Microphone test failed:', err);
-      setError('Microphone test failed. Please check permissions.');
-    }
-  };
-
-  // Debug audio state function
-  const debugAudioState = async () => {
-    try {
-      console.log('=== Audio Debug Information ===');
-      
-      // Check available devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioDevices = devices.filter(device => device.kind === 'audioinput');
-      
-      console.log('Available audio devices:', audioDevices.map(d => ({
-        deviceId: d.deviceId,
-        label: d.label,
-        groupId: d.groupId
-      })));
-      
-      // Check current permissions
-      const permissions = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-      console.log('Microphone permission state:', permissions.state);
-      
-      // Check Stream SDK microphone state
-      if (call) {
-        console.log('Stream microphone state:', {
-          localState: isMicEnabled,
-          // Note: Stream SDK doesn't expose isEnabled/isMuted/hasAudio properties
-          // We rely on local state management
-        });
-      }
-      
-      // Test current audio stream
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('Current audio stream:', {
-          trackCount: stream.getTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          trackEnabled: stream.getAudioTracks()[0]?.enabled,
-          trackMuted: stream.getAudioTracks()[0]?.muted,
-          trackReadyState: stream.getAudioTracks()[0]?.readyState
-        });
-        stream.getTracks().forEach(track => track.stop());
-      } catch (streamErr) {
-        console.error('Failed to get audio stream for debugging:', streamErr);
-      }
-      
-      console.log('=== End Audio Debug ===');
-      
-    } catch (err) {
-      console.error('Audio debug failed:', err);
-    }
-  };
-
-  // Handle microphone toggle with simplified audio handling
-  const toggleMicrophone = async () => {
-    try {
-      if (isMicEnabled) {
-        console.log('Disabling microphone...');
-        await call.microphone.disable();
-        setIsMicEnabled(false);
-        setLastAction('Microphone muted');
-        setShowFeedback(true);
-        setTimeout(() => setShowFeedback(false), 2000);
+      setError(null);
+      if (isCameraEnabled) {
+        // turning OFF preview
+        await stopPreview();
+        setIsCameraEnabled(false);
+        setLastAction('Camera turned off');
       } else {
-        console.log('Enabling microphone...');
-        
-        // First test microphone access
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
-            video: false 
-          });
-          
-          // Verify audio track is available
-          const audioTracks = audioStream.getAudioTracks();
-          if (audioTracks.length === 0) {
-            throw new Error('No audio tracks available');
-          }
-          
-          // Stop the test stream
-          audioStream.getTracks().forEach(track => track.stop());
-          
-          // Now enable with Stream SDK
-          await call.microphone.enable();
-          
-          // Apply noise cancellation settings if enabled
-          if (noiseCancellationEnabled) {
-            try {
-              // Note: Stream SDK handles audio processing internally
-              // We'll rely on the browser's built-in noise cancellation
-              console.log('Noise cancellation enabled - using browser defaults');
-            } catch (audioErr) {
-              console.log('Audio processing not supported, using default settings');
-            }
-          }
-          
-          setIsMicEnabled(true);
-          setLastAction('Microphone unmuted');
-          setShowFeedback(true);
-          setTimeout(() => setShowFeedback(false), 2000);
-          
-        } catch (audioErr) {
-          console.error('Failed to access microphone:', audioErr);
-          setError('Microphone access denied. Please check browser permissions and try again.');
-          return;
-        }
+        // turning ON preview
+        await startPreview();
+        setIsCameraEnabled(true);
+        setLastAction('Camera turned on');
       }
-    } catch (err) {
-      console.error('Error toggling microphone:', err);
-      setError('Failed to toggle microphone. Please check permissions and try again.');
+      setShowFeedback(true);
+      setTimeout(() => setShowFeedback(false), 1600);
+    } catch (e) {
+      // startPreview already set a friendly error
     }
   };
 
-  // Handle join muted toggle with direct stream management
+  const toggleMicrophone = () => {
+    setIsMicEnabled(!isMicEnabled);
+  };
+
+  // cleanup on unmount
+  useEffect(() => {
+    return () => { stopPreview(); };
+  }, [stopPreview]);
+
   const handleJoinMutedToggle = async (checked: boolean) => {
     try {
       if (checked) {
-        // Join muted - disable both camera and mic
-        await call.microphone.disable();
-        
-        // Properly stop camera stream to release hardware
-        await stopCameraStream();
-        
+        await stopPreview();              // release camera for SDK
         setIsCameraEnabled(false);
         setIsMicEnabled(false);
       } else {
-        // Join unmuted - enable both camera and mic
-        await startCameraStream();
-        await call.microphone.enable();
-        setIsCameraEnabled(true);
         setIsMicEnabled(true);
+        // don't auto-start preview here; wait for explicit camera toggle
       }
-    } catch (err) {
-      console.error('Error toggling join muted:', err);
+    } catch {
       setError('Failed to update device settings.');
     }
   };
 
-  // Handle join meeting with proper guards
   const handleJoinMeeting = async () => {
-    // Prevent multiple join attempts
-    if (isJoining || hasJoined) {
-      console.log('Join already in progress or completed');
+    if (isJoining || hasJoined) return;
+    if (!participantName.trim()) {
+      setError('Please enter your name to join the meeting.');
       return;
     }
-
     try {
-      if (!participantName.trim()) {
-        setError('Please enter your name to join the meeting.');
-        return;
-      }
-
-      // Set joining state to prevent duplicate calls
       setIsJoining(true);
       setError(null);
 
-      console.log('Starting join process...', {
-        participantName: participantName.trim(),
-        isCameraEnabled,
-        isMicEnabled,
-        callId: call.id
-      });
+      // IMPORTANT: release the preview so Stream can claim the camera
+      await stopPreview();
 
-      // Set the participant name and device states in the call metadata
       await call.join({
-        data: { 
+        data: {
           custom: {
             initialCameraEnabled: isCameraEnabled,
             initialMicEnabled: isMicEnabled,
-            participantName: participantName.trim()
-          }
-        }
+            participantName: participantName.trim(),
+          },
+        },
       });
 
-      console.log('Call joined successfully, setting device states...');
-
-      // Set the initial device states
-      if (!isCameraEnabled) {
-        await call.camera.disable();
-        console.log('Camera disabled');
-      }
-      if (!isMicEnabled) {
-        await call.microphone.disable();
-        console.log('Microphone disabled');
-      }
-
-      console.log('Device states set, completing setup...');
-
-      // Mark as joined and complete setup with proper state updates
       setHasJoined(true);
-      
-      // Use setTimeout to ensure state updates are processed
-      setTimeout(() => {
-        console.log('Setting setup complete...');
-        setupCompleteRef.current = true;
-        setIsSetupComplete(true);
-      }, 100);
-
-      // Fallback: If setup doesn't complete within 5 seconds, force it
-      setTimeout(() => {
-        if (!setupCompleteRef.current) {
-          console.log('Fallback: Forcing setup completion...');
-          setupCompleteRef.current = true;
-          setIsSetupComplete(true);
-        }
-      }, 5000);
-
+      setTimeout(() => setIsSetupComplete(true), 80);
     } catch (err) {
-      console.error('Error joining meeting:', err);
-      setError('Failed to join the meeting. Please try again.');
-      // Reset joining state on error
       setIsJoining(false);
+      setError('Failed to join the meeting. Please try again.');
     }
   };
+
+
 
   return (
     <TooltipProvider>
@@ -789,60 +260,32 @@ const MeetingSetup = ({
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.4 }}
-                  className="relative overflow-hidden rounded-2xl border-2 border-gray-700/50 bg-black/30"
+                  className="relative overflow-hidden rounded-2xl border-2 border-gray-700/50 bg-black"
                 >
-                  <video
-                    ref={(el) => setLocalVideoElement(el)}
-                    className="aspect-video w-full object-cover"
-                    autoPlay
-                    muted
-                    playsInline
-                    style={{ 
-                      opacity: isCameraEnabled && cameraStream ? 1 : 0,
-                      backgroundColor: '#000',
-                      transition: 'opacity 0.3s ease'
-                    }}
-                  />
-                  
-                  {/* Camera Disabled Placeholder */}
-                  {!isCameraEnabled && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80">
-                      <div className="text-center">
-                        <VideoOff className="h-16 w-16 text-gray-400 mx-auto mb-2" />
-                        <p className="text-gray-400 text-sm">Camera is disabled</p>
-                        <p className="text-gray-500 text-xs mt-1">Click the camera button to enable</p>
+                  <div className="relative w-full" style={{ paddingTop: '56.25%' /* 16:9 */ }}>
+
+                    <video
+                      ref={previewVideoRef}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      autoPlay
+                      muted
+                      playsInline
+                      style={{ opacity: isCameraEnabled && !!previewStreamRef.current ? 1 : 0 }}
+                    />
+
+                    {/* Placeholder when OFF or stream not ready */}
+                    {(!isCameraEnabled || !previewStreamRef.current) && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80">
+                        <div className="text-center">
+                          <VideoOff className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                          <p className="text-gray-300 text-sm">
+                            {isCameraEnabled ? 'Starting camera…' : 'Video is disabled'}
+                          </p>
+                          {!!error && <p className="text-xs text-red-300 mt-2">{error}</p>}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  
-                  {/* Camera Loading State */}
-                  {isCameraEnabled && !cameraStream && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80">
-                      <div className="text-center">
-                        <div className="h-16 w-16 mx-auto mb-2 animate-spin rounded-full border-4 border-gray-600 border-t-blue-500"></div>
-                        <p className="text-gray-400 text-sm">Starting camera...</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Camera Error State */}
-                  {isCameraEnabled && !cameraStream && error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-red-900/80">
-                      <div className="text-center">
-                        <VideoOff className="h-16 w-16 text-red-400 mx-auto mb-2" />
-                        <p className="text-red-400 text-sm">Camera access denied</p>
-                        <p className="text-red-300 text-xs mt-1 mb-3">Please check permissions</p>
-                        <Button
-                          onClick={handleCameraPermissionRecovery}
-                          size="sm"
-                          variant="outline"
-                          className="bg-red-800/50 border-red-600 text-red-200 hover:bg-red-700/50"
-                        >
-                          Retry Camera
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Enhanced Status Indicators - Always Visible */}
                   <div className="absolute left-4 top-4 flex items-center gap-3 z-10">
@@ -852,27 +295,27 @@ const MeetingSetup = ({
                         <motion.div 
                           className="flex items-center gap-2 rounded-lg bg-gray-900/90 px-3 py-1.5 text-sm backdrop-blur-sm cursor-pointer"
                           animate={{ 
-                            backgroundColor: isCameraEnabled && cameraStream ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                            borderColor: isCameraEnabled && cameraStream ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'
+                            backgroundColor: isCameraEnabled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            borderColor: isCameraEnabled ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'
                           }}
                           transition={{ duration: 0.3 }}
                           style={{ border: '1px solid transparent' }}
                         >
                       <motion.div 
-                        className={`h-2 w-2 rounded-full ${isCameraEnabled && cameraStream ? 'bg-green-500' : 'bg-red-500'}`}
+                        className={`h-2 w-2 rounded-full ${isCameraEnabled ? 'bg-green-500' : 'bg-red-500'}`}
                         animate={{ 
-                          scale: isCameraEnabled && cameraStream ? [1, 1.2, 1] : 1,
-                          opacity: isCameraEnabled && cameraStream ? 1 : 0.7
+                          scale: isCameraEnabled ? [1, 1.2, 1] : 1,
+                          opacity: isCameraEnabled ? 1 : 0.7
                         }}
-                        transition={{ duration: 0.5, repeat: isCameraEnabled && cameraStream ? Infinity : 0, repeatDelay: 2 }}
+                        transition={{ duration: 0.5, repeat: isCameraEnabled ? Infinity : 0, repeatDelay: 2 }}
                       />
                           <span className="text-white font-medium">
-                            Camera {isCameraEnabled && cameraStream ? 'On' : 'Off'}
+                            Camera {isCameraEnabled && !!previewStreamRef.current ? 'On' : 'Off'}
                           </span>
                         </motion.div>
                       </TooltipTrigger>
                       <TooltipContent className="bg-gray-800 text-white border-gray-700">
-                        <p>Camera is {isCameraEnabled && cameraStream ? 'enabled' : 'disabled'}</p>
+                        <p>Camera is {isCameraEnabled && !!previewStreamRef.current ? 'enabled' : 'disabled'}</p>
                         <p className="text-xs text-gray-400 mt-1">Click to toggle camera</p>
                       </TooltipContent>
                     </Tooltip>
@@ -1002,20 +445,6 @@ const MeetingSetup = ({
                                 <Settings className="h-4 w-4 text-gray-400" />
                                 <span>Audio Settings</span>
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={testMicrophone}
-                                className="flex items-center gap-3 text-white hover:bg-gray-700"
-                              >
-                                <Volume2 className="h-4 w-4 text-gray-400" />
-                                <span>Test Microphone</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={debugAudioState}
-                                className="flex items-center gap-3 text-white hover:bg-gray-700"
-                              >
-                                <Info className="h-4 w-4 text-gray-400" />
-                                <span>Debug Audio</span>
-                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TooltipTrigger>
@@ -1103,10 +532,6 @@ const MeetingSetup = ({
                             >
                               <Settings className="h-4 w-4 text-gray-400" />
                               <span>Video Settings</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="flex items-center gap-3 text-white hover:bg-gray-700">
-                              <Monitor className="h-4 w-4 text-gray-400" />
-                              <span>Background Effects</span>
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -1225,26 +650,26 @@ const MeetingSetup = ({
                         <div className="flex items-center gap-3">
                         <motion.div
                           animate={{ 
-                            scale: isCameraEnabled && cameraStream ? 1 : 0.8,
-                            opacity: isCameraEnabled && cameraStream ? 1 : 0.6
+                            scale: isCameraEnabled ? 1 : 0.8,
+                            opacity: isCameraEnabled ? 1 : 0.6
                           }}
                           transition={{ duration: 0.2 }}
                         >
-                          <Video className={`h-5 w-5 ${isCameraEnabled && cameraStream ? 'text-green-400' : 'text-red-400'}`} />
+                          <Video className={`h-5 w-5 ${isCameraEnabled ? 'text-green-400' : 'text-red-400'}`} />
                         </motion.div>
                           <span className="text-sm text-gray-300">Camera</span>
                         </div>
                       <div className="flex items-center gap-2">
                         <motion.div
                           animate={{ 
-                            scale: isCameraEnabled && cameraStream ? 1 : 0,
-                            opacity: isCameraEnabled && cameraStream ? 1 : 0
+                            scale: isCameraEnabled ? 1 : 0,
+                            opacity: isCameraEnabled ? 1 : 0
                           }}
                           transition={{ duration: 0.2 }}
-                          className={`h-2 w-2 rounded-full ${isCameraEnabled && cameraStream ? 'bg-green-500' : 'bg-red-500'}`}
+                          className={`h-2 w-2 rounded-full ${isCameraEnabled ? 'bg-green-500' : 'bg-red-500'}`}
                         />
-                        <span className={`text-sm font-medium ${isCameraEnabled && cameraStream ? 'text-green-400' : 'text-red-400'}`}>
-                          {isCameraEnabled && cameraStream ? 'Working' : 'Disabled'}
+                        <span className={`text-sm font-medium ${isCameraEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                          {isCameraEnabled ? 'Working' : 'Disabled'}
                         </span>
                       </div>
                       </div>
@@ -1324,27 +749,6 @@ const MeetingSetup = ({
                       Please enter your name to join the meeting
                     </p>
                   )}
-                  {hasJoined && !setupCompleteRef.current && (
-                    <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className="h-5 w-5 text-yellow-400" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-yellow-400">Manual Override</p>
-                          <p className="text-xs text-yellow-300 mt-1">
-                            If you&apos;re stuck here, click the button below to proceed to the meeting room.
-                          </p>
-                        </div>
-                        <Button
-                          onClick={() => setIsSetupComplete(true)}
-                          size="sm"
-                          variant="outline"
-                          className="bg-yellow-800/50 border-yellow-600 text-yellow-200 hover:bg-yellow-700/50 text-xs"
-                        >
-                          Proceed to Meeting
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </motion.div>
               </div>
             </div>
@@ -1363,53 +767,6 @@ const MeetingSetup = ({
             <div className="flex-1">
               <p className="text-sm font-medium text-red-400">Setup Error</p>
               <p className="text-xs text-red-300 mt-1">{error}</p>
-              {error.includes('Camera access denied') && (
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    onClick={handleCameraPermissionRecovery}
-                    size="sm"
-                    variant="outline"
-                    className="bg-red-800/50 border-red-600 text-red-200 hover:bg-red-700/50 text-xs"
-                  >
-                    Retry Camera
-                  </Button>
-                  <Button
-                    onClick={debugCameraState}
-                    size="sm"
-                    variant="outline"
-                    className="bg-blue-800/50 border-blue-600 text-blue-200 hover:bg-blue-700/50 text-xs"
-                  >
-                    Debug Camera
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      console.log('Debug: Current state', {
-                        participantName,
-                        isJoining,
-                        hasJoined,
-                        setupComplete: setupCompleteRef.current,
-                        isCameraEnabled,
-                        isMicEnabled,
-                        callId: call?.id,
-                        callState: call?.state
-                      });
-                    }}
-                    size="sm"
-                    variant="outline"
-                    className="bg-green-800/50 border-green-600 text-green-200 hover:bg-green-700/50 text-xs"
-                  >
-                    Debug State
-                  </Button>
-                  <Button
-                    onClick={() => setError(null)}
-                    size="sm"
-                    variant="outline"
-                    className="bg-gray-800/50 border-gray-600 text-gray-200 hover:bg-gray-700/50 text-xs"
-                  >
-                    Dismiss
-                  </Button>
-                </div>
-              )}
             </div>
             <button
               onClick={() => setError(null)}

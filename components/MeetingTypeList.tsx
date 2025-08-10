@@ -15,6 +15,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { useToast } from './ui/use-toast';
 import { Input } from './ui/input';
 import { getMeetingLink, sanitizeCallId } from '@/lib/utils';
+import { logOnce } from '@/lib/logger';
 
 interface MeetingData {
   title: string;
@@ -57,7 +58,7 @@ const MeetingTypeList = () => {
     setIsCreating(true);
 
     try {
-      console.log('createMeeting: Starting meeting creation...', {
+      logOnce('createMeeting-start', 'createMeeting: Starting meeting creation...', {
         meetingState,
         meetingData,
         userId: user.id
@@ -67,16 +68,33 @@ const MeetingTypeList = () => {
       const callId = meetingData?.title 
         ? sanitizeCallId(meetingData.title) 
         : `instant-${Date.now()}`;
-      console.log('createMeeting: Creating call with ID:', callId);
-      const call = await client.call('default', callId);
+      logOnce(`createMeeting-call-${callId}`, 'createMeeting: Creating call with ID:', callId);
       
-      // Ensure the call is properly initialized
+      // Don't await client.call() - use the pattern from requirements
+      const call = client.call('default', callId);
+      
+      // Ensure the call is properly initialized with getOrCreate
       await call.getOrCreate();
 
-      console.log('createMeeting: Meeting created successfully, call ID:', call.id);
-      console.log('createMeeting: Call object:', call);
-      console.log('createMeeting: Call type:', call.type);
-      console.log('createMeeting: Call state:', call.state);
+      try {
+        await fetch('/api/chat/meetings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            meetingId: call.id,
+            title: meetingData?.title || `Instant Meeting ${new Date().toLocaleString()}`,
+            participants: [] // server will add the host; others will be added on join
+          })
+        });
+      } catch (e) {
+        console.warn('POST /api/chat/meetings upsert failed (non-fatal):', e);
+      }
+
+      logOnce(`createMeeting-success-${call.id}`, 'createMeeting: Meeting created successfully, call ID:', call.id);
+      logOnce(`createMeeting-details-${call.id}`, 'createMeeting: Call details:', { 
+        type: call.type, 
+        state: call.state 
+      });
 
       // Save scheduled meeting to our database if it's a scheduled meeting
       if (meetingData && meetingData.date && meetingData.time) {
@@ -176,8 +194,7 @@ const MeetingTypeList = () => {
       setCallDetail(call);
       
       if (meetingState === 'isInstantMeeting') {
-        console.log('createMeeting: Redirecting to meeting room...');
-        console.log('createMeeting: Redirect URL:', `/meeting/${call.id}`);
+        logOnce(`redirect-${call.id}`, 'createMeeting: Redirecting to meeting room:', `/meeting/${call.id}`);
         router.push(`/meeting/${call.id}`);
       } else {
         // For scheduled meetings, show success message and close modal
@@ -221,17 +238,56 @@ const MeetingTypeList = () => {
     }
 
     try {
-      // Extract meeting ID from link
-      const meetingId = values.link.split('/').pop();
+      // Robust join link parsing
+      let meetingId = values.link.trim();
+      
+      // If it's a valid URL, extract the last path segment
+      if (meetingId.startsWith('http://') || meetingId.startsWith('https://')) {
+        try {
+          const url = new URL(meetingId);
+          const pathSegments = url.pathname.split('/').filter(Boolean);
+          meetingId = pathSegments[pathSegments.length - 1] || meetingId;
+        } catch (urlError) {
+          console.warn('Invalid URL format, treating as raw ID');
+        }
+      } else {
+        // Remove any trailing slashes and treat as raw ID
+        meetingId = meetingId.replace(/\/+$/, '');
+      }
+      
       if (!meetingId) {
         throw new Error('Invalid meeting link');
       }
+      
       router.push(`/meeting/${meetingId}`);
     } catch (error) {
       toast({
         title: 'Error',
         description: 'Invalid meeting link. Please check and try again.',
         variant: 'destructive'
+      });
+    }
+  };
+
+  const handleCopyMeetingLink = async () => {
+    if (!callDetail) return;
+    
+    const meetingLink = getMeetingLink(callDetail.id);
+    
+    try {
+      await navigator.clipboard.writeText(meetingLink);
+      toast({ 
+        title: 'Success',
+        description: 'Meeting link copied to clipboard'
+      });
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      
+      // Fallback: show the link in a toast
+      toast({
+        title: 'Meeting Link',
+        description: `Copy this link: ${meetingLink}`,
+        duration: 10000
       });
     }
   };
@@ -328,13 +384,7 @@ const MeetingTypeList = () => {
           }}
           title="Meeting Scheduled!"
           description="Your meeting has been scheduled successfully"
-          handleClick={() => {
-            navigator.clipboard.writeText(meetingLink);
-            toast({ 
-              title: 'Success',
-              description: 'Meeting link copied to clipboard'
-            });
-          }}
+          handleClick={handleCopyMeetingLink}
           image="/icons/checked.svg"
           buttonIcon="/icons/copy.svg"
           buttonText="Copy Meeting Link"
