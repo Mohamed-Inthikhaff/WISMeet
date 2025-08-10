@@ -92,7 +92,7 @@ const MeetingChatHistory = () => {
     }
   };
 
-  const formatTime = (timestamp: Date) => {
+  const formatTime = (timestamp: Date | string) => {
     return format(new Date(timestamp), 'HH:mm');
   };
 
