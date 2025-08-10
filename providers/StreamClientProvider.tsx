@@ -11,59 +11,25 @@ const API_KEY = process.env.NEXT_PUBLIC_STREAM_API_KEY;
 const StreamVideoProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const { user, isLoaded } = useUser();
-  const initializationRef = useRef(false);
 
-  // Create client only once per user session using useMemo
   const videoClient = useMemo(() => {
-    if (!isLoaded || !user || !API_KEY) {
-      return null;
-    }
-
-    // Prevent multiple initializations
-    if (initializationRef.current) {
-      return null;
-    }
-
+    if (!isLoaded || !user || !API_KEY) return null;
     try {
-      console.log('StreamVideoProvider: Creating new Stream client for user:', user.id);
-      initializationRef.current = true;
-
-      const client = new StreamVideoClient({
+      return new StreamVideoClient({
         apiKey: API_KEY,
-        user: {
-          id: user.id,
-          name: user.firstName || user.username || user.id,
-          image: user.imageUrl,
-        },
+        user: { id: user.id, name: user.firstName || user.username || user.id, image: user.imageUrl },
         tokenProvider,
       });
-
-      console.log('StreamVideoProvider: Stream client created successfully');
-      return client;
-    } catch (error) {
-      console.error('StreamVideoProvider: Error creating Stream client:', error);
+    } catch (e) {
+      console.error('StreamVideoProvider: client create error', e);
       setError('Failed to initialize video client');
       return null;
     }
-  }, [user?.id, isLoaded]); // Only depend on user ID and loading state
+  }, [isLoaded, user?.id, API_KEY]);
 
-  // Cleanup effect
   useEffect(() => {
-    return () => {
-      if (videoClient) {
-        console.log('StreamVideoProvider: Cleaning up video client');
-        videoClient.disconnectUser();
-        initializationRef.current = false;
-      }
-    };
+    return () => { if (videoClient) videoClient.disconnectUser(); };
   }, [videoClient]);
-
-  // Reset initialization flag when user changes
-  useEffect(() => {
-    if (!user) {
-      initializationRef.current = false;
-    }
-  }, [user?.id]);
 
   if (error) {
     return (
