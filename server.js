@@ -24,6 +24,7 @@ if (missingVars.length > 0) {
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
+const { Server } = require('socket.io');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
@@ -33,17 +34,19 @@ const port = process.env.PORT || 3000;
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
+let io; // singleton
+
 app.prepare().then(async () => {
-  // Import the socket manager dynamically
-  const { chatSocketManager } = require('./lib/socket.js');
-  
   const server = createServer(async (req, res) => {
     try {
       // Parse the URL
       const parsedUrl = parse(req.url, true);
       const { pathname } = parsedUrl;
 
-      // Handle Next.js requests
+      // Log every incoming request path (briefly)
+      console.log(`[${new Date().toISOString()}] ${req.method} ${pathname}`);
+
+      // Handle Next.js requests - this will handle all routes including /api/*
       await handle(req, res, parsedUrl);
     } catch (err) {
       console.error('Error occurred handling', req.url, err);
@@ -52,8 +55,37 @@ app.prepare().then(async () => {
     }
   });
 
-  // Initialize Socket.io
-  chatSocketManager.init(server);
+  // Initialize Socket.io once with proper CORS and error logging
+  if (!io) {
+    io = new Server(server, {
+      cors: {
+        origin: dev ? true : (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'),
+        methods: ['GET', 'POST'],
+        credentials: true,
+      },
+      transports: ['polling', 'websocket'], // polling first for stability
+    });
+
+    // Import and setup socket handlers
+    const { setupSocketHandlers } = require('./lib/socket.js');
+    
+    io.on('connection', (socket) => {
+      console.log('Socket connected:', socket.id);
+
+      socket.on('error', (err) => {
+        console.error('Socket error:', err);
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log('Socket disconnected:', socket.id, reason);
+      });
+
+      // Setup application-specific handlers
+      setupSocketHandlers(socket, io);
+    });
+
+    console.log('Socket.io server initialized with hardened configuration');
+  }
 
   server.listen(port, (err) => {
     if (err) throw err;
