@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   DeviceSettings,
   useCall,
   useCallStateHooks,
+  VideoPreview,
 } from '@stream-io/video-react-sdk';
 import { motion } from 'framer-motion';
 import Alert from './Alert';
@@ -49,25 +50,16 @@ const MeetingSetup = ({
   const [cameraDropdownOpen, setCameraDropdownOpen] = useState(false);
   const [lastAction, setLastAction] = useState<string>('');
   const [showFeedback, setShowFeedback] = useState(false);
-  
-  const setupCompleteRef = useRef(false);
-
-  // --- Preview-only camera refs (do NOT reuse in room) ---
-  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
-  const previewStreamRef = useRef<MediaStream | null>(null);
 
   const call = useCall();
   const { useCallCallingState } = useCallStateHooks();
   const callingState = useCallCallingState();
-  const joinOnceRef = useRef(false);
 
   if (!call) {
     throw new Error(
       'useStreamCall must be used within a StreamCall component.',
     );
   }
-
-
 
   // Setup completion effect
   useEffect(() => {
@@ -77,96 +69,57 @@ const MeetingSetup = ({
     }
   }, [callingState, setIsSetupComplete]);
 
-  // Start preview stream
-  const startPreview = useCallback(async () => {
-    // if already running, do nothing
-    if (previewStreamRef.current) return previewStreamRef.current;
-
-    try {
-      setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user',
-        },
-        audio: false,
-      });
-
-      previewStreamRef.current = stream;
-      if (previewVideoRef.current) {
-        previewVideoRef.current.srcObject = stream;
-        await previewVideoRef.current.play().catch(() => {});
-      }
-      return stream;
-    } catch (e: any) {
-      previewStreamRef.current = null;
-      // map common errors to friendly text
-      const name = e?.name;
-      if (name === 'NotAllowedError') setError('Camera permission denied. Allow access to see the preview.');
-      else if (name === 'NotFoundError') setError('No camera found on this device.');
-      else if (name === 'NotReadableError') setError('Camera is in use by another application.');
-      else setError(e?.message || 'Failed to start camera preview.');
-      throw e;
-    }
-  }, [setError]);
-
-  // Stop preview stream and release the camera
-  const stopPreview = useCallback(async () => {
-    if (previewStreamRef.current) {
-      previewStreamRef.current.getTracks().forEach(t => t.stop());
-      previewStreamRef.current = null;
-    }
-    if (previewVideoRef.current) {
-      previewVideoRef.current.srcObject = null;
-    }
-  }, []);
-
+  // Use Stream SDK to toggle camera; no direct getUserMedia
   const toggleCamera = async () => {
     try {
       setError(null);
-      if (isCameraEnabled) {
-        // turning OFF preview
-        await stopPreview();
-        setIsCameraEnabled(false);
-        setLastAction('Camera turned off');
-      } else {
-        // turning ON preview
-        await startPreview();
-        setIsCameraEnabled(true);
-        setLastAction('Camera turned on');
-      }
+      await call.camera.toggle();
+      setIsCameraEnabled((prev) => !prev);
+      setLastAction(`Camera turned ${isCameraEnabled ? 'off' : 'on'}`);
       setShowFeedback(true);
-      setTimeout(() => setShowFeedback(false), 1600);
-    } catch (e) {
-      // startPreview already set a friendly error
+      setTimeout(() => setShowFeedback(false), 2000);
+    } catch (err: any) {
+      console.error('Error toggling camera:', err);
+      setError(
+        err instanceof Error
+          ? `Camera error: ${err.message}. Please try again.`
+          : 'Failed to toggle camera. Please check permissions and try again.'
+      );
     }
   };
 
-  const toggleMicrophone = () => {
-    setIsMicEnabled(!isMicEnabled);
+  // Use Stream SDK to toggle microphone
+  const toggleMicrophone = async () => {
+    try {
+      if (isMicEnabled) {
+        await call.microphone.disable();
+      } else {
+        await call.microphone.enable();
+      }
+      setIsMicEnabled((prev) => !prev);
+      setLastAction(isMicEnabled ? 'Microphone muted' : 'Microphone unmuted');
+      setShowFeedback(true);
+      setTimeout(() => setShowFeedback(false), 2000);
+    } catch (err) {
+      console.error('Error toggling microphone:', err);
+      setError('Failed to toggle microphone. Please check permissions and try again.');
+    }
   };
-
-  // cleanup on unmount
-  useEffect(() => {
-    return () => { stopPreview(); };
-  }, [stopPreview]);
 
   const handleJoinMutedToggle = async (checked: boolean) => {
     try {
       if (checked) {
-        await stopPreview();              // release camera for SDK
         setIsCameraEnabled(false);
         setIsMicEnabled(false);
       } else {
         setIsMicEnabled(true);
-        // don't auto-start preview here; wait for explicit camera toggle
       }
     } catch {
       setError('Failed to update device settings.');
     }
   };
 
+  // Simplified join: no local getUserMedia, use Stream flags
   const handleJoinMeeting = async () => {
     if (isJoining || hasJoined) return;
     if (!participantName.trim()) {
@@ -176,10 +129,6 @@ const MeetingSetup = ({
     try {
       setIsJoining(true);
       setError(null);
-
-      // IMPORTANT: release the preview so Stream can claim the camera
-      await stopPreview();
-
       await call.join({
         data: {
           custom: {
@@ -189,16 +138,25 @@ const MeetingSetup = ({
           },
         },
       });
-
+      // Set devices according to user choices once
+      if (isCameraEnabled) {
+        await call.camera.enable();
+      } else {
+        await call.camera.disable();
+      }
+      if (isMicEnabled) {
+        await call.microphone.enable();
+      } else {
+        await call.microphone.disable();
+      }
       setHasJoined(true);
-      setTimeout(() => setIsSetupComplete(true), 80);
+      setTimeout(() => setIsSetupComplete(true), 100);
     } catch (err) {
-      setIsJoining(false);
+      console.error('Error joining meeting:', err);
       setError('Failed to join the meeting. Please try again.');
+      setIsJoining(false);
     }
   };
-
-
 
   return (
     <TooltipProvider>
@@ -260,32 +218,9 @@ const MeetingSetup = ({
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.4 }}
-                  className="relative overflow-hidden rounded-2xl border-2 border-gray-700/50 bg-black"
+                  className="relative flex items-center justify-center overflow-hidden rounded-2xl border-2 border-gray-700/50 bg-black min-h-[300px]"
                 >
-                  <div className="relative w-full" style={{ paddingTop: '56.25%' /* 16:9 */ }}>
-
-                    <video
-                      ref={previewVideoRef}
-                      className="absolute inset-0 h-full w-full object-cover"
-                      autoPlay
-                      muted
-                      playsInline
-                      style={{ opacity: isCameraEnabled && !!previewStreamRef.current ? 1 : 0 }}
-                    />
-
-                    {/* Placeholder when OFF or stream not ready */}
-                    {(!isCameraEnabled || !previewStreamRef.current) && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80">
-                        <div className="text-center">
-                          <VideoOff className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                          <p className="text-gray-300 text-sm">
-                            {isCameraEnabled ? 'Starting camera…' : 'Video is disabled'}
-                          </p>
-                          {!!error && <p className="text-xs text-red-300 mt-2">{error}</p>}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <VideoPreview />
 
                   {/* Enhanced Status Indicators - Always Visible */}
                   <div className="absolute left-4 top-4 flex items-center gap-3 z-10">
@@ -310,12 +245,12 @@ const MeetingSetup = ({
                         transition={{ duration: 0.5, repeat: isCameraEnabled ? Infinity : 0, repeatDelay: 2 }}
                       />
                           <span className="text-white font-medium">
-                            Camera {isCameraEnabled && !!previewStreamRef.current ? 'On' : 'Off'}
+                            Camera {isCameraEnabled ? 'On' : 'Off'}
                           </span>
                         </motion.div>
                       </TooltipTrigger>
                       <TooltipContent className="bg-gray-800 text-white border-gray-700">
-                        <p>Camera is {isCameraEnabled && !!previewStreamRef.current ? 'enabled' : 'disabled'}</p>
+                        <p>Camera is {isCameraEnabled ? 'enabled' : 'disabled'}</p>
                         <p className="text-xs text-gray-400 mt-1">Click to toggle camera</p>
                       </TooltipContent>
                     </Tooltip>
