@@ -30,7 +30,7 @@ import MeetingTranscription from './MeetingTranscription';
 
 import { cn } from '@/lib/utils';
 import { useChat } from '@/hooks/useChat';
-import { audioMonitor, AudioHealthStatus } from '@/lib/audio-monitor';
+import { audioMonitor } from '@/lib/audio-monitor';
 import { createAutomaticSummaryTriggers, AutomaticSummaryTriggers } from '@/lib/automatic-summary-triggers';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
@@ -297,15 +297,12 @@ const MeetingRoom = () => {
     }
   }, [call, localParticipant, devicesInitialized, initializeDevices]);
 
-  // Inform audio monitor that we are inside a joined call
+  // Set audio monitor into call-mode when joining
   useEffect(() => {
-    if (callingState === CallingState.JOINED) {
-      audioMonitor.setInCall(true);
-    } else {
-      audioMonitor.setInCall(false);
-    }
-    return () => audioMonitor.setInCall(false);
+    audioMonitor.setInCall(callingState === CallingState.JOINED);
   }, [callingState]);
+
+  // Stream SDK handles track management automatically
 
 
   if (callingState !== CallingState.JOINED) {
