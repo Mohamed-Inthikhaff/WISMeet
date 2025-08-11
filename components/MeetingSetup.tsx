@@ -5,6 +5,7 @@ import {
   useCall,
   useCallStateHooks,
   VideoPreview,
+  CallingState,
 } from '@stream-io/video-react-sdk';
 import { motion } from 'framer-motion';
 import Alert from './Alert';
@@ -64,7 +65,7 @@ const MeetingSetup = ({
   // Setup completion effect
   useEffect(() => {
     // Only transition when the SDK actually reports joined
-    if (callingState === 'joined') {
+    if (callingState === CallingState.JOINED) {
       setIsSetupComplete(true);
     }
   }, [callingState, setIsSetupComplete]);
@@ -129,16 +130,15 @@ const MeetingSetup = ({
     try {
       setIsJoining(true);
       setError(null);
+      // Join the call without device flags
       await call.join({
         data: {
           custom: {
-            initialCameraEnabled: isCameraEnabled,
-            initialMicEnabled: isMicEnabled,
             participantName: participantName.trim(),
           },
         },
       });
-      // Set devices according to user choices once
+      // Set devices after joining so they persist
       if (isCameraEnabled) {
         await call.camera.enable();
       } else {

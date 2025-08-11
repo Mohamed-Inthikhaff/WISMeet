@@ -43,7 +43,6 @@ const MeetingRoom = () => {
   const [layout, setLayout] = useState<CallLayoutType>('speaker-left');
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
-  const [devicesInitialized, setDevicesInitialized] = useState(false);
   const [socket, setSocket] = useState<any>(null);
   const [meetingTranscript, setMeetingTranscript] = useState('');
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
@@ -260,42 +259,6 @@ const MeetingRoom = () => {
       }
     };
   }, [call, localParticipant, callingState]);
-
-  // Enhanced microphone initialization with better error handling
-  const initializeDevices = useCallback(async () => {
-    if (!call || !localParticipant) return;
-
-    const micOn = !!call.state.custom?.initialMicEnabled;
-    const camOn = !!call.state.custom?.initialCameraEnabled;
-
-    try {
-      if (micOn) {
-        await call.microphone.enable();
-      } else {
-        await call.microphone.disable();
-      }
-
-      if (camOn) {
-        await call.camera.enable();
-      } else {
-        await call.camera.disable();
-      }
-    } catch (err) {
-      console.error('Device initialization failed:', err);
-    }
-  }, [call, localParticipant]);
-
-  useEffect(() => {
-    if (call && localParticipant && !devicesInitialized) {
-      // Add a small delay to ensure everything is ready
-      const timer = setTimeout(() => {
-        initializeDevices();
-        setDevicesInitialized(true);
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [call, localParticipant, devicesInitialized, initializeDevices]);
 
   // Set audio monitor into call-mode when joining
   useEffect(() => {
