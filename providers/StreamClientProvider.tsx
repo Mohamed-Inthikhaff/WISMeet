@@ -2,34 +2,55 @@
 
 import { StreamVideo, StreamVideoClient, StreamTheme } from '@stream-io/video-react-sdk';
 import { useUser } from '@clerk/nextjs';
-import { useEffect, useState, ReactNode, useMemo, useRef } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 import { tokenProvider } from '@/actions/stream.actions';
 import Loader from '@/components/Loader';
 
 const API_KEY = process.env.NEXT_PUBLIC_STREAM_API_KEY;
 
 const StreamVideoProvider = ({ children }: { children: ReactNode }) => {
+  const [client, setClient] = useState<StreamVideoClient | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { user, isLoaded } = useUser();
 
-  const videoClient = useMemo(() => {
-    if (!isLoaded || !user || !API_KEY) return null;
-    try {
-      return new StreamVideoClient({
-        apiKey: API_KEY,
-        user: { id: user.id, name: user.firstName || user.username || user.id, image: user.imageUrl },
-        tokenProvider,
-      });
-    } catch (e) {
-      console.error('StreamVideoProvider: client create error', e);
-      setError('Failed to initialize video client');
-      return null;
-    }
-  }, [isLoaded, user?.id, API_KEY]);
-
   useEffect(() => {
-    return () => { if (videoClient) videoClient.disconnectUser(); };
-  }, [videoClient]);
+    let isMounted = true;
+    
+    async function initClient() {
+      if (!isLoaded || !user || !API_KEY) return;
+      
+      try {
+        const c = new StreamVideoClient({
+          apiKey: API_KEY,
+          user: {
+            id: user.id,
+            name: user.firstName || user.username || user.id,
+            image: user.imageUrl,
+          },
+          tokenProvider,
+        });
+        
+        if (isMounted) {
+          setClient(c);
+          setError(null);
+        }
+      } catch (err) {
+        console.error('StreamClientProvider: Error creating Stream client:', err);
+        if (isMounted) {
+          setError('Failed to initialize video client');
+        }
+      }
+    }
+
+    initClient();
+
+    return () => {
+      isMounted = false;
+      if (client) {
+        client.disconnectUser();
+      }
+    };
+  }, [isLoaded, user?.id, API_KEY]);
 
   if (error) {
     return (
@@ -43,18 +64,12 @@ const StreamVideoProvider = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  if (!videoClient) {
-    if (!isLoaded) {
-      return <Loader />;
-    }
-    if (!user) {
-      return <Loader />;
-    }
+  if (!client) {
     return <Loader />;
   }
 
   return (
-    <StreamVideo client={videoClient}>
+    <StreamVideo client={client}>
       <StreamTheme>{children}</StreamTheme>
     </StreamVideo>
   );
